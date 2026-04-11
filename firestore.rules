@@ -24,9 +24,12 @@ service cloud.firestore {
         : 0;
     }
 
+    // Treat missing/null division as '' so same-division checks stay consistent
     function divId() {
       return authed() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? selfDoc().get('divisionId', '')
+        ? selfDoc().get('divisionId', '') == null
+          ? ''
+          : string(selfDoc().get('divisionId', ''))
         : '';
     }
 
@@ -89,11 +92,17 @@ service cloud.firestore {
 
       // Own logs always readable
       // CNP+ (HQ) read all
-      // MCPO+ (≥42, Divisional Command) read same-division logs
+      // MCPO+ (≥42) read same-division logs (incl. pending — for review UIs)
+      // Any member with a division can read approved logs in that division (dashboard stats, transparency)
       allow read: if authed() && (
         resource.data.authorUid == request.auth.uid
         || pl() >= 60
         || (pl() >= 42 && resource.data.get('divisionId', '') == divId())
+        || (
+          divId() != ''
+          && resource.data.get('divisionId', '') == divId()
+          && resource.data.get('status', '') == 'approved'
+        )
       );
 
       // Any authenticated user can create logs for themselves

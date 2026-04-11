@@ -97,14 +97,25 @@
 
       <div class="page-header">
         <h1>Activity Log</h1>
-        <p>Submit duty minutes or hosted events for divisional review. At least one proof is required.</p>
+        <p>Submit duty minutes or hosted events for divisional review. At least one proof is required.
+          <span data-min-perm="60" class="text-muted" style="font-size:0.88rem;display:block;margin-top:6px">
+            HQ: choose the division this log applies to; event types match that division’s admin configuration.
+          </span>
+        </p>
       </div>
 
-      <div class="card" style="margin-bottom:20px">
-        <div class="tab-bar">
-          <button class="tab-btn active" data-tab="tab-duty">⏱ Duty Minutes</button>
-          <button class="tab-btn" data-tab="tab-event">★ Host Event</button>
-        </div>
+      <!-- Division Selector (CNP+ / permission ≥ 60) -->
+      <div class="form-group mb-3" data-min-perm="60">
+        <label for="division-selector">Division for this log</label>
+        <select id="division-selector" class="form-control"></select>
+        <div class="form-text">Select which division should receive and review this submission.</div>
+      </div>
+
+      <!-- Tab Logic -->
+      <div class="tab-bar">
+        <button type="button" class="tab-btn active" data-tab="tab-duty">⏱ Duty Minutes</button>
+        <button type="button" class="tab-btn" data-tab="tab-event" id="tab-btn-event">★ Host Event</button>
+      </div>
 
         <!-- ── Duty Tab ── -->
         <div class="tab-panel active" id="tab-duty">
@@ -210,7 +221,6 @@
             <button type="submit" id="event-submit" class="btn btn-primary">Submit Event Log</button>
           </form>
         </div>
-      </div>
 
       <!-- My Submissions -->
       <div class="card">

@@ -11,9 +11,112 @@
   markActiveSidebarLink();
   setupLogoutBtn();
 
+  const isHQPicker = u.permission_level >= PERM.ADMIN_PANEL;
+
+  // ── Fetch Divisions ────────────────────────────────────────────
+  async function fetchDivisions() {
+    try {
+      const snap = await db.collection('divisions').orderBy('name').get();
+      return snap.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name || '—',
+      }));
+    } catch (err) {
+      console.error('Failed to fetch divisions:', err);
+      showAlert('duty-alert', 'danger', 'Failed to load division list.');
+      showAlert('event-alert', 'danger', 'Failed to load division list.');
+      return [];
+    }
+  }
+
+  const divisionSelector = document.getElementById('division-selector');
+  const eventTypeSelect = document.getElementById('event-type');
+  const divisions = await fetchDivisions();
+  const tabBtnEvent = document.getElementById('tab-btn-event');
+
+  divisions.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.id;
+    opt.textContent = d.name;
+    divisionSelector.appendChild(opt);
+  });
+
+  // Default selection: HQ defaults to profile division if present, else first in list;
+  // others use their assigned division.
+  if (isHQPicker && divisions.length) {
+    const hasProfile = u.divisionId && divisions.some(d => d.id === u.divisionId);
+    divisionSelector.value = hasProfile ? u.divisionId : divisions[0].id;
+  } else if (u.divisionId) {
+    const match = divisions.find(d => d.id === u.divisionId);
+    if (match) divisionSelector.value = u.divisionId;
+  }
+
+  /** Division id/name for the log being submitted (HQ picker vs profile). */
+  function getActivityDivision() {
+    const pickerGroup = divisionSelector.closest('[data-min-perm]');
+    const pickerShown = pickerGroup && !pickerGroup.classList.contains('hidden');
+    if (pickerShown && isHQPicker) {
+      const id = divisionSelector.value;
+      const row = divisions.find(d => d.id === id);
+      return { divisionId: id || null, divisionName: row ? row.name : null };
+    }
+    return { divisionId: u.divisionId || null, divisionName: u.divisionName || null };
+  }
+
+  function setHostEventTabVisible(show) {
+    if (!tabBtnEvent) return;
+    tabBtnEvent.classList.toggle('hidden', !show);
+    if (!show) {
+      const eventPanel = document.getElementById('tab-event');
+      const dutyBtn = document.querySelector('.tab-btn[data-tab="tab-duty"]');
+      if (eventPanel && eventPanel.classList.contains('active')) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        if (dutyBtn) dutyBtn.classList.add('active');
+        document.getElementById('tab-duty').classList.add('active');
+      }
+    }
+  }
+
+  async function loadEventTypesForDivision(divisionId) {
+    let typesToShow = EVENT_TYPES;
+    if (divisionId && divisionId !== 'ndvl') {
+      try {
+        const divSnap = await db.collection('divisions').doc(divisionId).get();
+        if (divSnap.exists) {
+          const divTypes = divSnap.data().eventTypes;
+          if (Array.isArray(divTypes) && divTypes.length) {
+            const hasCustom = divTypes.includes('Custom Event');
+            typesToShow = hasCustom ? [...divTypes] : [...divTypes, 'Custom Event'];
+          }
+        }
+      } catch (_) {}
+    }
+    eventTypeSelect.innerHTML = '<option value="">— Select Type —</option>';
+    typesToShow.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t;
+      opt.textContent = t;
+      eventTypeSelect.appendChild(opt);
+    });
+    document.getElementById('custom-event-row').classList.add('hidden');
+  }
+
+  function applyDivisionContextForActivity() {
+    const { divisionId } = getActivityDivision();
+    const canHost = divisionId && divisionId !== 'ndvl';
+    setHostEventTabVisible(canHost);
+    return loadEventTypesForDivision(divisionId);
+  }
+
+  divisionSelector.addEventListener('change', () => {
+    applyDivisionContextForActivity();
+  });
+
   // ── Tab Logic ────────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (btn.classList.contains('hidden')) return;
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
@@ -21,31 +124,12 @@
     });
   });
 
-  // ── Populate Event Type Select (from division, or global fallback) ────
-  const eventTypeSelect = document.getElementById('event-type');
-
-  let typesToShow = EVENT_TYPES; // fallback
-  if (u.divisionId && u.divisionId !== 'ndvl') {
-    try {
-      const divSnap = await db.collection('divisions').doc(u.divisionId).get();
-      if (divSnap.exists) {
-        const divTypes = divSnap.data().eventTypes;
-        if (Array.isArray(divTypes) && divTypes.length) {
-          typesToShow = [...divTypes, 'Custom Event'];
-        }
-      }
-    } catch (_) {} // fall back to global silently
-  }
-
-  typesToShow.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t; opt.textContent = t;
-    eventTypeSelect.appendChild(opt);
-  });
   eventTypeSelect.addEventListener('change', () => {
     document.getElementById('custom-event-row')
       .classList.toggle('hidden', eventTypeSelect.value !== 'Custom Event');
   });
+
+  await applyDivisionContextForActivity();
 
   // ── Shared: build log proof object from form inputs ───────
   async function collectProof(imageInputId, discordInputId, alertId) {
@@ -97,6 +181,8 @@
 
     btn.innerHTML = '<span class="spinner"></span> Submitting…';
 
+    const { divisionId: logDivId, divisionName: logDivName } = getActivityDivision();
+
     try {
       const logRef = await db.collection('logs').add({
         type:            'duty',
@@ -106,8 +192,8 @@
         authorRankName:  u.rankName          || null,
         authorDivRankId: u.divRankId         || null,
         authorDivRank:   u.divRankName       || null,
-        divisionId:      u.divisionId        || null,
-        divisionName:    u.divisionName      || null,
+        divisionId:      logDivId,
+        divisionName:    logDivName,
         status:          'pending',
         date:            firebase.firestore.Timestamp.fromDate(new Date(date)),
         durationMinutes: minutes,
@@ -120,16 +206,16 @@
         reviewNotes:     null,
       });
 
-      await auditLog('log.create', 'log', logRef.id, { type: 'duty', minutes });
+      await auditLog('log.create', 'log', logRef.id, { type: 'duty', minutes, divisionId: logDivId });
 
       // Notify Discord directly (non-fatal)
-      sendDiscordNotification(u.divisionId, {
+      sendDiscordNotification(logDivId, {
         title:  '⏱️ Duty Log Submitted — Pending Approval',
         color:  0x3498db,
         fields: [
           { name: 'Personnel', value: u.username || '—',       inline: true },
           { name: 'Duration',  value: `${minutes} min`,        inline: true },
-          { name: 'Division',  value: u.divisionName || '—',   inline: true },
+          { name: 'Division',  value: logDivName || '—',   inline: true },
           ...(proof.discordLink ? [{ name: 'Discord Proof', value: `[View](${proof.discordLink})`, inline: false }] : []),
         ],
       });
@@ -179,6 +265,14 @@
 
     btn.innerHTML = '<span class="spinner"></span> Submitting…';
 
+    const { divisionId: logDivId, divisionName: logDivName } = getActivityDivision();
+    if (!logDivId || logDivId === 'ndvl') {
+      showAlert('event-alert', 'danger', 'Hosted events cannot be submitted for Navy Divisionless. Use duty minutes or select another division (HQ).');
+      btn.disabled = false;
+      btn.textContent = 'Submit Event Log';
+      return;
+    }
+
     try {
       const displayName = evtType === 'Custom Event' ? customName : evtType;
       const logRef = await db.collection('logs').add({
@@ -189,8 +283,8 @@
         authorRankName:  u.rankName          || null,
         authorDivRankId: u.divRankId         || null,
         authorDivRank:   u.divRankName       || null,
-        divisionId:      u.divisionId        || null,
-        divisionName:    u.divisionName      || null,
+        divisionId:      logDivId,
+        divisionName:    logDivName,
         status:          'pending',
         date:            firebase.firestore.Timestamp.fromDate(new Date(date)),
         eventType:       evtType,
@@ -205,15 +299,15 @@
         reviewNotes:     null,
       });
 
-      await auditLog('log.create', 'log', logRef.id, { type: 'event', evtType });
+      await auditLog('log.create', 'log', logRef.id, { type: 'event', evtType, divisionId: logDivId });
 
-      sendDiscordNotification(u.divisionId, {
+      sendDiscordNotification(logDivId, {
         title:  `📋 Event Hosted — ${escHtml(displayName)}`,
         color:  0x9b59b6,
         fields: [
           { name: 'Personnel',   value: u.username || '—',      inline: true },
           { name: 'Participants',value: String(participants),    inline: true },
-          { name: 'Division',    value: u.divisionName || '—',  inline: true },
+          { name: 'Division',    value: logDivName || '—',  inline: true },
           ...(proof.discordLink ? [{ name: 'Discord Proof', value: `[View](${proof.discordLink})`, inline: false }] : []),
         ],
       });
