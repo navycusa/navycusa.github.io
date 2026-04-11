@@ -21,9 +21,23 @@
     });
   });
 
-  // ── Populate Event Type Select ────────────────────────────
+  // ── Populate Event Type Select (from division, or global fallback) ────
   const eventTypeSelect = document.getElementById('event-type');
-  EVENT_TYPES.forEach(t => {
+
+  let typesToShow = EVENT_TYPES; // fallback
+  if (u.divisionId && u.divisionId !== 'ndvl') {
+    try {
+      const divSnap = await db.collection('divisions').doc(u.divisionId).get();
+      if (divSnap.exists) {
+        const divTypes = divSnap.data().eventTypes;
+        if (Array.isArray(divTypes) && divTypes.length) {
+          typesToShow = [...divTypes, 'Custom Event'];
+        }
+      }
+    } catch (_) {} // fall back to global silently
+  }
+
+  typesToShow.forEach(t => {
     const opt = document.createElement('option');
     opt.value = t; opt.textContent = t;
     eventTypeSelect.appendChild(opt);

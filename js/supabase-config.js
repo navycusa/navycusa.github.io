@@ -42,3 +42,18 @@ async function uploadProofImage(file, uid) {
 
   return data.publicUrl;
 }
+
+// ── Delete a proof image by its public URL (called after Discord send) ──
+async function deleteProofImage(publicUrl) {
+  if (!publicUrl) return;
+  try {
+    const marker = '/proof-images/';
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return;
+    const path = decodeURIComponent(publicUrl.slice(idx + marker.length));
+    const { error } = await supabaseClient.storage.from('proof-images').remove([path]);
+    if (error) console.warn('Supabase delete warning:', error.message);
+  } catch (e) {
+    console.warn('deleteProofImage failed (non-fatal):', e.message);
+  }
+}

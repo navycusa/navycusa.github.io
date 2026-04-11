@@ -118,10 +118,14 @@ service cloud.firestore {
       );
 
       // Owner can delete own pending logs
-      // UnderSecNav+ (≥85) can delete approved logs for archiving
+      // UnderSecNav+ (≥85) can delete any approved log (for global archive)
+      // Admiral+ (≥50) can delete approved logs in own division (for divisional archive)
       allow delete: if authed() && (
         (resource.data.authorUid == request.auth.uid && resource.data.status == 'pending')
         || (pl() >= 85 && resource.data.status == 'approved')
+        || (pl() >= 50 && resource.data.status == 'approved'
+            && resource.data.get('divisionId', '') == divId()
+            && divId() != '')
       );
     }
 
@@ -141,8 +145,18 @@ service cloud.firestore {
 
     // ── /archives/{archiveId} ────────────────────────────────
     match /archives/{archiveId} {
-      allow read:   if authed() && pl() >= 85;
-      allow create: if authed() && pl() >= 85;
+      // CNP+ (≥60) read all; any division member reads own division's archives (for stats)
+      allow read: if authed() && (
+        pl() >= 60
+        || (divId() != '' && resource.data.get('divisionId', '') == divId())
+      );
+      // UnderSecNav+ (≥85) archive any/all; Admiral+ (≥50) archive own division only
+      allow create: if authed() && (
+        pl() >= 85
+        || (pl() >= 50 && divId() != ''
+            && request.resource.data.get('divisionId', '') == divId()
+            && request.resource.data.divisionId != null)
+      );
       allow update, delete: if false;
     }
 

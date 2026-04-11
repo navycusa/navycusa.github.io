@@ -61,14 +61,16 @@ const EVENT_TYPES = [
   'Custom Event',
 ];
 
-// Permission level thresholds — keep in sync with Firestore rules & Cloud Functions
+// Permission level thresholds — keep in sync with Firestore rules
 const PERM = {
-  ADMIN_PANEL:      60,   // CNP+
-  CREATE_USERS:     60,   // CNP+
-  MANAGE_DIVISIONS: 90,   // SecNav+
-  MANAGE_DIV_RANKS: 70,   // CNO+
-  ARCHIVE_LOGS:     85,   // UnderSecNav+
-  APPROVE_LOGS:     42,   // Lieutenant+
+  ADMIN_PANEL:           60,   // CNP+
+  CREATE_USERS:          60,   // CNP+
+  MANAGE_DIVISIONS:      90,   // SecNav+
+  MANAGE_DIV_RANKS:      70,   // CNO+
+  MANAGE_DIV_EVENTS:     42,   // MCPO+ (Divisional Command) — manage own division's event types
+  ARCHIVE_OWN_DIVISION:  50,   // Admiral+ — archive own division only
+  ARCHIVE_LOGS:          85,   // UnderSecNav+ — archive any / all divisions
+  APPROVE_LOGS:          42,   // MCPO+
 };
 
 // ── Helpers ──────────────────────────────────────────────────

@@ -63,10 +63,13 @@
         <button class="tab-btn" data-tab="tab-review">
           ⏳ Log Review
         </button>
+        <button class="tab-btn" data-tab="tab-my-division" data-min-perm="42">
+          🏴 My Division
+        </button>
         <button class="tab-btn" data-tab="tab-divisions" data-min-perm="90">
           🏛️ Divisions
         </button>
-        <button class="tab-btn" data-tab="tab-archive" data-min-perm="85">
+        <button class="tab-btn" data-tab="tab-archive" data-min-perm="50">
           🗄️ Archive
         </button>
         <button class="tab-btn" data-tab="tab-audit">
@@ -136,6 +139,36 @@
       </div>
 
       <!-- ════════════════════════════════════════════════════
+           TAB: My Division  (MCPO+ — manage own division's event types)
+      ════════════════════════════════════════════════════ -->
+      <div class="tab-panel" id="tab-my-division">
+        <div id="my-div-alert" class="alert hidden"></div>
+
+        <div class="card" style="max-width:600px">
+          <div class="card-header"><h3 id="my-div-name">My Division</h3></div>
+
+          <div style="padding:0 0 4px">
+            <h4 style="margin-bottom:8px;padding:16px 20px 0">Event Types</h4>
+            <p style="font-size:0.83rem;color:var(--text-secondary);padding:0 20px 12px">
+              Configure which event types personnel in your division can log. If left empty, the global defaults are used.
+            </p>
+
+            <div id="my-div-event-types-list" style="padding:0 20px;min-height:32px"></div>
+
+            <div style="display:flex;gap:8px;padding:12px 20px 0">
+              <input type="text" id="new-event-type-input" class="form-control"
+                placeholder="New event type name…" style="flex:1">
+              <button id="add-event-type-btn" class="btn btn-secondary btn-sm">+ Add</button>
+            </div>
+
+            <div style="padding:12px 20px 16px">
+              <button id="save-event-types-btn" class="btn btn-primary">Save Event Types</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
            TAB: Divisions  (SecNav+ only)
       ════════════════════════════════════════════════════ -->
       <div class="tab-panel" id="tab-divisions">
@@ -168,33 +201,44 @@
       </div>
 
       <!-- ════════════════════════════════════════════════════
-           TAB: Archive  (UnderSecNav+)
+           TAB: Archive  (Admiral+ for own, UnderSecNav+ for all)
       ════════════════════════════════════════════════════ -->
       <div class="tab-panel" id="tab-archive">
         <div id="archive-alert" class="alert hidden"></div>
 
-        <div class="card" style="max-width:520px">
-          <div class="card-header"><h3>🗄️ Archive Approved Logs</h3></div>
+        <div style="display:flex;flex-direction:column;gap:20px;max-width:560px">
 
-          <div class="alert alert-warning mb-16">
-            <div>
-              <strong>Irreversible Action.</strong><br>
-              Archiving moves all <em>approved</em> logs to the <code>archives</code> collection
-              and removes them from the live <code>logs</code> collection.
-              Pending logs are not affected.
+          <!-- Own division archive — Admiral+ (pl ≥ 50) -->
+          <div class="card" data-min-perm="50">
+            <div class="card-header"><h3>🗄️ Archive My Division</h3></div>
+            <div style="padding:16px 20px">
+              <div class="alert alert-warning" style="margin-bottom:16px">
+                <strong>Irreversible.</strong> Moves all <em>approved</em> logs for your division
+                to the archives. Pending logs are not affected.
+                Archived logs still count toward monthly &amp; all-time stats.
+              </div>
+              <button id="archive-own-btn" class="btn btn-danger">Archive My Division</button>
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="archive-division">Filter by Division (leave blank for all)</label>
-            <select id="archive-division" class="form-control">
-              <option value="">— All Divisions —</option>
-            </select>
+          <!-- All-division archive — UnderSecNav+ (pl ≥ 85) -->
+          <div class="card" data-min-perm="85">
+            <div class="card-header"><h3>🗄️ Archive Any Division</h3></div>
+            <div style="padding:16px 20px">
+              <div class="alert alert-warning" style="margin-bottom:16px">
+                <strong>Irreversible.</strong> Select a division or leave blank to archive across
+                all divisions at once.
+              </div>
+              <div class="form-group">
+                <label for="archive-division">Filter by Division</label>
+                <select id="archive-division" class="form-control">
+                  <option value="">— All Divisions —</option>
+                </select>
+              </div>
+              <button id="archive-btn" class="btn btn-danger">Run Archive</button>
+            </div>
           </div>
 
-          <button id="archive-btn" class="btn btn-danger btn-lg">
-            Run Archive
-          </button>
         </div>
       </div>
 
@@ -363,6 +407,19 @@
           <button type="button" id="add-div-rank-btn" class="btn btn-secondary btn-sm">+ Add Rank to List</button>
         </div>
       </div>
+      <!-- Division Event Types — shown for MCPO+ of own division, or HQ -->
+      <div id="div-events-section" class="hidden" style="margin-top:20px">
+        <h4 style="margin-bottom:8px;color:var(--text-secondary)">Event Types</h4>
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px">
+          Define which event types personnel in this division can log. Leave empty to use global defaults.
+        </p>
+        <div id="div-events-list" style="margin-bottom:10px;min-height:24px"></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="de-new-type" class="form-control"
+            placeholder="New event type…" style="flex:1">
+          <button type="button" id="add-div-event-btn" class="btn btn-secondary btn-sm">+ Add</button>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" id="div-modal-cancel">Cancel</button>
@@ -375,7 +432,9 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="/js/firebase-config.js"></script>
+<script src="/js/supabase-config.js"></script>
 <script src="/js/ranks.js"></script>
 <script src="/js/auth.js"></script>
 <script src="/js/admin.js"></script>

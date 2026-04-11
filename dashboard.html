@@ -5,12 +5,71 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — US Navy CUSA Portal</title>
   <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .stats-period-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      border-top: 1px solid var(--border);
+    }
+    .stats-period {
+      padding: 18px 20px;
+      border-right: 1px solid var(--border);
+    }
+    .stats-period:last-child { border-right: none; }
+    .stats-period-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .stats-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .stat-card-sm {
+      background: rgba(30,77,140,0.18);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 10px;
+      text-align: center;
+    }
+    .stat-card-sm .stat-value {
+      display: block;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--gold);
+      line-height: 1.2;
+    }
+    .stat-card-sm .stat-label {
+      display: block;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-top: 4px;
+    }
+    .my-stats-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 900px) {
+      .stats-period-grid { grid-template-columns: 1fr; }
+      .stats-period { border-right: none; border-bottom: 1px solid var(--border); }
+      .stats-period:last-child { border-bottom: none; }
+      .my-stats-row { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
 </head>
 <body>
 
 <div class="app-wrapper">
 
-  <!-- ── Header ──────────────────────────────────────────── -->
   <header class="site-header">
     <a class="header-brand" href="/dashboard.html">
       <div class="brand-icon">⚓</div>
@@ -19,9 +78,7 @@
         <span class="brand-sub">Personnel Portal</span>
       </div>
     </a>
-
     <div class="header-spacer"></div>
-
     <div class="header-user">
       <div class="header-user-info">
         <span class="u-name" id="header-username">—</span>
@@ -34,18 +91,12 @@
 
   <div class="app-body">
 
-    <!-- ── Sidebar ────────────────────────────────────────── -->
     <nav class="sidebar">
       <div class="sidebar-section">
         <div class="sidebar-label">Navigation</div>
-        <a class="sidebar-link" href="/dashboard.html">
-          <span class="nav-icon">🏠</span> Dashboard
-        </a>
-        <a class="sidebar-link" href="/activity.html">
-          <span class="nav-icon">📋</span> Activity Log
-        </a>
+        <a class="sidebar-link" href="/dashboard.html"><span class="nav-icon">🏠</span> Dashboard</a>
+        <a class="sidebar-link" href="/activity.html"><span class="nav-icon">📋</span> Activity Log</a>
       </div>
-
       <div class="sidebar-section" data-min-perm="60">
         <div class="sidebar-label">Administration</div>
         <a class="sidebar-link" href="/admin.html" data-min-perm="60">
@@ -53,7 +104,6 @@
           <span id="pending-count" class="badge badge-pending hidden" style="margin-left:auto"></span>
         </a>
       </div>
-
       <div class="sidebar-footer">
         <p style="font-size:0.68rem;color:var(--text-muted);text-align:center">
           US Navy CUSA Portal<br>Authorized Personnel Only
@@ -61,7 +111,6 @@
       </div>
     </nav>
 
-    <!-- ── Main ──────────────────────────────────────────── -->
     <main class="main-content">
 
       <!-- Profile Banner -->
@@ -71,27 +120,78 @@
           <h2 id="profile-username">—</h2>
           <div class="profile-meta">
             <span class="badge badge-rank" id="profile-rank">—</span>
-            <span class="badge" id="profile-cat-badge">
-              <span id="profile-cat">—</span>
-            </span>
+            <span class="badge" id="profile-cat-badge"><span id="profile-cat">—</span></span>
             <span class="badge badge-command" id="profile-division">—</span>
           </div>
         </div>
       </div>
 
-      <!-- Stats -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <span class="stat-value" id="stat-minutes">—</span>
-          <span class="stat-label">Duty Minutes</span>
+      <!-- Division Activity Stats -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <h3 id="div-stats-heading">Division Activity</h3>
+          <!-- HQ: division selector -->
+          <select id="div-selector" class="form-control hidden"
+            style="max-width:220px;margin-left:auto;padding:5px 10px;height:34px">
+            <option value="">— Select Division —</option>
+          </select>
         </div>
-        <div class="stat-card">
-          <span class="stat-value" id="stat-events">—</span>
-          <span class="stat-label">Events Hosted</span>
+        <div id="div-stats-loading" style="padding:30px;text-align:center">
+          <span class="spinner"></span>
         </div>
+        <div id="div-stats-content" class="hidden">
+          <div class="stats-period-grid">
+            <div class="stats-period">
+              <div class="stats-period-title">This Week</div>
+              <div class="stats-pair">
+                <div class="stat-card-sm">
+                  <span class="stat-value" id="stat-week-minutes">—</span>
+                  <span class="stat-label">Duty Min</span>
+                </div>
+                <div class="stat-card-sm">
+                  <span class="stat-value" id="stat-week-events">—</span>
+                  <span class="stat-label">Events</span>
+                </div>
+              </div>
+            </div>
+            <div class="stats-period">
+              <div class="stats-period-title">This Month</div>
+              <div class="stats-pair">
+                <div class="stat-card-sm">
+                  <span class="stat-value" id="stat-month-minutes">—</span>
+                  <span class="stat-label">Duty Min</span>
+                </div>
+                <div class="stat-card-sm">
+                  <span class="stat-value" id="stat-month-events">—</span>
+                  <span class="stat-label">Events</span>
+                </div>
+              </div>
+            </div>
+            <div class="stats-period">
+              <div class="stats-period-title">All Time</div>
+              <div class="stats-pair">
+                <div class="stat-card-sm">
+                  <span class="stat-value" id="stat-perm-minutes">—</span>
+                  <span class="stat-label">Duty Min</span>
+                </div>
+                <div class="stat-card-sm">
+                  <span class="stat-value" id="stat-perm-events">—</span>
+                  <span class="stat-label">Events</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p id="div-stats-note" style="font-size:0.72rem;color:var(--text-muted);padding:8px 20px">
+            Weekly: live approved logs only. Monthly &amp; All Time: includes archived logs.
+          </p>
+        </div>
+      </div>
+
+      <!-- My Personal Stats -->
+      <div class="my-stats-row">
         <div class="stat-card">
           <span class="stat-value" id="stat-approved">—</span>
-          <span class="stat-label">Logs Approved</span>
+          <span class="stat-label">My Logs Approved</span>
         </div>
         <div class="stat-card">
           <span class="stat-value" id="stat-pending">—</span>
@@ -99,8 +199,8 @@
         </div>
       </div>
 
-      <!-- Recent Logs -->
-      <div class="card">
+      <!-- Recent Submissions -->
+      <div class="card" style="margin-bottom:20px">
         <div class="card-header">
           <h3>Recent Submissions</h3>
           <a href="/activity.html" class="btn btn-sm btn-secondary">View All</a>
@@ -109,11 +209,8 @@
           <table>
             <thead>
               <tr>
-                <th>Type</th>
-                <th>Details</th>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Submitted</th>
+                <th>Type</th><th>Details</th><th>Date</th>
+                <th>Status</th><th>Submitted</th>
               </tr>
             </thead>
             <tbody id="recent-logs-body">
@@ -123,24 +220,21 @@
         </div>
       </div>
 
-      <!-- Pending Approvals (Divisional Command+) -->
-      <div class="card mt-16 hidden" id="pending-section">
+      <!-- Pending Approvals (MCPO+) -->
+      <div class="card hidden" id="pending-section">
         <div class="card-header">
-          <h3>⏳ Pending Approvals — Your Division</h3>
+          <h3>⏳ Pending Approvals</h3>
           <a href="/admin.html#review" class="btn btn-sm btn-primary">Review All</a>
         </div>
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
-                <th>Personnel</th>
-                <th>Type</th>
-                <th>Submitted</th>
-                <th>Action</th>
+                <th>Personnel</th><th>Type</th><th>Division</th><th>Submitted</th><th>Action</th>
               </tr>
             </thead>
             <tbody id="pending-logs-body">
-              <tr><td colspan="4" class="page-loading"><span class="spinner"></span> Loading…</td></tr>
+              <tr><td colspan="5" class="page-loading"><span class="spinner"></span> Loading…</td></tr>
             </tbody>
           </table>
         </div>
