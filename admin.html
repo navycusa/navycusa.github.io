@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel — US Navy CUSA Portal</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+
+<div class="app-wrapper">
+
+  <header class="site-header">
+    <a class="header-brand" href="/dashboard.html">
+      <div class="brand-icon">⚓</div>
+      <div class="brand-text">
+        <span class="brand-name">NavyCUSA</span>
+        <span class="brand-sub">Personnel Portal</span>
+      </div>
+    </a>
+    <div class="header-spacer"></div>
+    <div class="header-user">
+      <div class="header-user-info">
+        <span class="u-name" id="header-username">—</span>
+        <span class="u-rank" id="header-rank">—</span>
+      </div>
+      <div class="header-avatar" id="header-avatar">?</div>
+      <button id="logout-btn" class="btn btn-secondary btn-sm">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Navigation</div>
+        <a class="sidebar-link" href="/dashboard.html"><span class="nav-icon">🏠</span> Dashboard</a>
+        <a class="sidebar-link" href="/activity.html"><span class="nav-icon">📋</span> Activity Log</a>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Administration</div>
+        <a class="sidebar-link" href="/admin.html"><span class="nav-icon">⚙️</span> Admin Panel</a>
+      </div>
+      <div class="sidebar-footer">
+        <p style="font-size:0.68rem;color:var(--text-muted);text-align:center">
+          US Navy CUSA Portal<br>Authorized Personnel Only
+        </p>
+      </div>
+    </nav>
+
+    <main class="main-content">
+
+      <div class="page-header">
+        <h1>⚙️ Admin Panel</h1>
+        <p>Personnel management, log review, and system administration.</p>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="tab-users">
+          👤 Personnel
+        </button>
+        <button class="tab-btn" data-tab="tab-review">
+          ⏳ Log Review
+        </button>
+        <button class="tab-btn" data-tab="tab-divisions" data-min-perm="90">
+          🏛️ Divisions
+        </button>
+        <button class="tab-btn" data-tab="tab-archive" data-min-perm="85">
+          🗄️ Archive
+        </button>
+        <button class="tab-btn" data-tab="tab-audit">
+          📜 Audit Log
+        </button>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
+           TAB: Personnel
+      ════════════════════════════════════════════════════ -->
+      <div class="tab-panel active" id="tab-users">
+        <div id="users-alert" class="alert hidden"></div>
+
+        <div class="flex items-center justify-between mb-16" style="gap:12px;flex-wrap:wrap">
+          <input type="text" id="user-search" class="form-control" style="max-width:280px"
+            placeholder="Search by username, rank, division…">
+          <button id="add-user-btn" class="btn btn-primary">+ Add Personnel</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Rank</th>
+                <th>Division</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-body">
+              <tr><td colspan="6" class="page-loading"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
+           TAB: Log Review
+      ════════════════════════════════════════════════════ -->
+      <div class="tab-panel" id="tab-review">
+        <div id="review-alert" class="alert hidden"></div>
+
+        <div class="alert alert-info mb-16">
+          Showing pending logs for your division (or all divisions if CNO+).
+          Approve or reject each entry below.
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Personnel</th>
+                <th>Type</th>
+                <th>Details</th>
+                <th>Division</th>
+                <th>Proof</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="review-body">
+              <tr><td colspan="6" class="page-loading"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
+           TAB: Divisions  (SecNav+ only)
+      ════════════════════════════════════════════════════ -->
+      <div class="tab-panel" id="tab-divisions">
+        <div id="divisions-alert" class="alert hidden"></div>
+
+        <div class="flex items-center justify-between mb-16" style="gap:12px;flex-wrap:wrap">
+          <div>
+            <button id="add-div-btn" class="btn btn-primary">+ Add Division</button>
+            <button id="seed-divisions-btn" class="btn btn-secondary" style="margin-left:8px">
+              Seed Default Divisions
+            </button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Division Name</th>
+                <th>Short Code</th>
+                <th>Discord Webhook</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="divisions-body">
+              <tr><td colspan="4" class="page-loading"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
+           TAB: Archive  (UnderSecNav+)
+      ════════════════════════════════════════════════════ -->
+      <div class="tab-panel" id="tab-archive">
+        <div id="archive-alert" class="alert hidden"></div>
+
+        <div class="card" style="max-width:520px">
+          <div class="card-header"><h3>🗄️ Archive Approved Logs</h3></div>
+
+          <div class="alert alert-warning mb-16">
+            <div>
+              <strong>Irreversible Action.</strong><br>
+              Archiving moves all <em>approved</em> logs to the <code>archives</code> collection
+              and removes them from the live <code>logs</code> collection.
+              Pending logs are not affected.
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="archive-division">Filter by Division (leave blank for all)</label>
+            <select id="archive-division" class="form-control">
+              <option value="">— All Divisions —</option>
+            </select>
+          </div>
+
+          <button id="archive-btn" class="btn btn-danger btn-lg">
+            Run Archive
+          </button>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
+           TAB: Audit Log
+      ════════════════════════════════════════════════════ -->
+      <div class="tab-panel" id="tab-audit">
+        <div class="flex items-center justify-between mb-16">
+          <h3 style="margin:0">Last 100 Audit Entries</h3>
+          <button id="audit-refresh-btn" class="btn btn-secondary btn-sm">↻ Refresh</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Action</th>
+                <th>Actor</th>
+                <th>Target</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="audit-body">
+              <tr><td colspan="5" class="page-loading"><span class="spinner"></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Modal: Add / Edit User
+══════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="user-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="user-modal-title">Add Personnel</h3>
+      <button class="modal-close" id="user-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="user-modal-alert" class="alert hidden"></div>
+
+      <div class="form-group">
+        <label for="um-username">Username *</label>
+        <input type="text" id="um-username" class="form-control" placeholder="Roblox username">
+        <div class="form-text">Initial password will be: <code>[Username]1234</code></div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="um-rank">Rank *</label>
+          <select id="um-rank" class="form-control">
+            <option value="">— Select Rank —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="um-division">Division *</label>
+          <select id="um-division" class="form-control">
+            <option value="">— Select Division —</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0">
+          <input type="checkbox" id="um-active" checked style="width:16px;height:16px">
+          <span style="font-size:0.875rem;color:var(--text-primary)">Account Active</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="user-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="user-modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     Modal: Add / Edit Division
+══════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop hidden" id="div-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="div-modal-title">Add Division</h3>
+      <button class="modal-close" id="div-modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="div-modal-alert" class="alert hidden"></div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="dm-name">Division Name *</label>
+          <input type="text" id="dm-name" class="form-control" placeholder="e.g. Navy SEALs">
+        </div>
+        <div class="form-group">
+          <label for="dm-short">Short Code</label>
+          <input type="text" id="dm-short" class="form-control" placeholder="e.g. SEALS" maxlength="10">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="dm-webhook">Discord Webhook URL</label>
+        <input type="url" id="dm-webhook" class="form-control"
+          placeholder="https://discord.com/api/webhooks/…">
+        <div class="form-text">Logs submitted by this division will be posted here.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="div-modal-cancel">Cancel</button>
+      <button class="btn btn-primary" id="div-modal-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="/js/firebase-config.js"></script>
+<script src="/js/ranks.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/admin.js"></script>
+</body>
+</html>

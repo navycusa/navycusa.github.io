@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — US Navy CUSA Portal</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+
+<div class="app-wrapper">
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <header class="site-header">
+    <a class="header-brand" href="/dashboard.html">
+      <div class="brand-icon">⚓</div>
+      <div class="brand-text">
+        <span class="brand-name">NavyCUSA</span>
+        <span class="brand-sub">Personnel Portal</span>
+      </div>
+    </a>
+
+    <div class="header-spacer"></div>
+
+    <div class="header-user">
+      <div class="header-user-info">
+        <span class="u-name" id="header-username">—</span>
+        <span class="u-rank" id="header-rank">—</span>
+      </div>
+      <div class="header-avatar" id="header-avatar">?</div>
+      <button id="logout-btn" class="btn btn-secondary btn-sm">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- ── Sidebar ────────────────────────────────────────── -->
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Navigation</div>
+        <a class="sidebar-link" href="/dashboard.html">
+          <span class="nav-icon">🏠</span> Dashboard
+        </a>
+        <a class="sidebar-link" href="/activity.html">
+          <span class="nav-icon">📋</span> Activity Log
+        </a>
+      </div>
+
+      <div class="sidebar-section" data-min-perm="60">
+        <div class="sidebar-label">Administration</div>
+        <a class="sidebar-link" href="/admin.html" data-min-perm="60">
+          <span class="nav-icon">⚙️</span> Admin Panel
+          <span id="pending-count" class="badge badge-pending hidden" style="margin-left:auto"></span>
+        </a>
+      </div>
+
+      <div class="sidebar-footer">
+        <p style="font-size:0.68rem;color:var(--text-muted);text-align:center">
+          US Navy CUSA Portal<br>Authorized Personnel Only
+        </p>
+      </div>
+    </nav>
+
+    <!-- ── Main ──────────────────────────────────────────── -->
+    <main class="main-content">
+
+      <!-- Profile Banner -->
+      <div class="profile-banner">
+        <div class="profile-avatar" id="profile-avatar">?</div>
+        <div>
+          <h2 id="profile-username">—</h2>
+          <div class="profile-meta">
+            <span class="badge badge-rank" id="profile-rank">—</span>
+            <span class="badge" id="profile-cat-badge">
+              <span id="profile-cat">—</span>
+            </span>
+            <span class="badge badge-command" id="profile-division">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-value" id="stat-minutes">—</span>
+          <span class="stat-label">Duty Minutes</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-events">—</span>
+          <span class="stat-label">Events Hosted</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-approved">—</span>
+          <span class="stat-label">Logs Approved</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value" id="stat-pending">—</span>
+          <span class="stat-label">Awaiting Review</span>
+        </div>
+      </div>
+
+      <!-- Recent Logs -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Recent Submissions</h3>
+          <a href="/activity.html" class="btn btn-sm btn-secondary">View All</a>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Details</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th>Submitted</th>
+              </tr>
+            </thead>
+            <tbody id="recent-logs-body">
+              <tr><td colspan="5" class="page-loading"><span class="spinner"></span> Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Pending Approvals (Divisional Command+) -->
+      <div class="card mt-16 hidden" id="pending-section">
+        <div class="card-header">
+          <h3>⏳ Pending Approvals — Your Division</h3>
+          <a href="/admin.html#review" class="btn btn-sm btn-primary">Review All</a>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Personnel</th>
+                <th>Type</th>
+                <th>Submitted</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="pending-logs-body">
+              <tr><td colspan="4" class="page-loading"><span class="spinner"></span> Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="/js/firebase-config.js"></script>
+<script src="/js/ranks.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/dashboard.js"></script>
+</body>
+</html>

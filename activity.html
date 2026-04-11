@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Activity Log — US Navy CUSA Portal</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+
+<div class="app-wrapper">
+
+  <header class="site-header">
+    <a class="header-brand" href="/dashboard.html">
+      <div class="brand-icon">⚓</div>
+      <div class="brand-text">
+        <span class="brand-name">NavyCUSA</span>
+        <span class="brand-sub">Personnel Portal</span>
+      </div>
+    </a>
+    <div class="header-spacer"></div>
+    <div class="header-user">
+      <div class="header-user-info">
+        <span class="u-name" id="header-username">—</span>
+        <span class="u-rank" id="header-rank">—</span>
+      </div>
+      <div class="header-avatar" id="header-avatar">?</div>
+      <button id="logout-btn" class="btn btn-secondary btn-sm">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Navigation</div>
+        <a class="sidebar-link" href="/dashboard.html"><span class="nav-icon">🏠</span> Dashboard</a>
+        <a class="sidebar-link" href="/activity.html"><span class="nav-icon">📋</span> Activity Log</a>
+      </div>
+      <div class="sidebar-section" data-min-perm="60">
+        <div class="sidebar-label">Administration</div>
+        <a class="sidebar-link" href="/admin.html" data-min-perm="60"><span class="nav-icon">⚙️</span> Admin Panel</a>
+      </div>
+      <div class="sidebar-footer">
+        <p style="font-size:0.68rem;color:var(--text-muted);text-align:center">
+          US Navy CUSA Portal<br>Authorized Personnel Only
+        </p>
+      </div>
+    </nav>
+
+    <main class="main-content">
+
+      <div class="page-header">
+        <h1>Activity Log</h1>
+        <p>Submit duty minutes or hosted events for divisional review.</p>
+      </div>
+
+      <!-- Submit Tabs -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="tab-duty">
+            &#9719; Log Duty Minutes
+          </button>
+          <button class="tab-btn" data-tab="tab-event">
+            &#9733; Log Event
+          </button>
+        </div>
+
+        <!-- Duty Tab -->
+        <div class="tab-panel active" id="tab-duty">
+          <div id="duty-alert" class="alert hidden"></div>
+          <form id="duty-form" novalidate>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="duty-minutes">Duration (minutes) *</label>
+                <input type="number" id="duty-minutes" class="form-control"
+                  placeholder="e.g. 60" min="1" max="1440" required>
+              </div>
+              <div class="form-group">
+                <label for="duty-date">Date of Duty *</label>
+                <input type="date" id="duty-date" class="form-control" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="duty-discord">Discord Proof Link *</label>
+              <input type="url" id="duty-discord" class="form-control"
+                placeholder="https://discord.com/channels/..." required>
+              <div class="form-text">Link to a Discord message or screenshot proving completion.</div>
+            </div>
+
+            <div class="form-group">
+              <label for="duty-notes">Notes</label>
+              <textarea id="duty-notes" class="form-control"
+                placeholder="Optional: describe what you did during duty…"></textarea>
+            </div>
+
+            <button type="submit" id="duty-submit" class="btn btn-primary">
+              Submit Duty Log
+            </button>
+          </form>
+        </div>
+
+        <!-- Event Tab -->
+        <div class="tab-panel" id="tab-event">
+          <div id="event-alert" class="alert hidden"></div>
+          <form id="event-form" novalidate>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="event-type">Event Type *</label>
+                <select id="event-type" class="form-control" required>
+                  <option value="">— Select Type —</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="event-date">Event Date *</label>
+                <input type="date" id="event-date" class="form-control" required>
+              </div>
+            </div>
+
+            <div class="form-group hidden" id="custom-event-row">
+              <label for="custom-event-name">Custom Event Name *</label>
+              <input type="text" id="custom-event-name" class="form-control"
+                placeholder="Name your custom event…">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="event-participants">Participants</label>
+                <input type="number" id="event-participants" class="form-control"
+                  placeholder="Number of attendees" min="1">
+              </div>
+              <div class="form-group">
+                <label for="event-discord">Discord Proof Link *</label>
+                <input type="url" id="event-discord" class="form-control"
+                  placeholder="https://discord.com/channels/..." required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="event-desc">Description</label>
+              <textarea id="event-desc" class="form-control"
+                placeholder="Describe the event…"></textarea>
+            </div>
+
+            <button type="submit" id="event-submit" class="btn btn-primary">
+              Submit Event Log
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- My Submissions -->
+      <div class="card">
+        <div class="card-header">
+          <h3>My Submissions</h3>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Details</th>
+                <th>Date</th>
+                <th>Proof</th>
+                <th>Status</th>
+                <th>Submitted</th>
+              </tr>
+            </thead>
+            <tbody id="my-logs-body">
+              <tr><td colspan="6" class="page-loading"><span class="spinner"></span> Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="/js/firebase-config.js"></script>
+<script src="/js/ranks.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/activity.js"></script>
+</body>
+</html>

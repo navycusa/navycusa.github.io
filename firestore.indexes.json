@@ -1,0 +1,30 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "authorUid",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId", "order": "ASCENDING"  },
+        { "fieldPath": "status",     "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status",     "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "ASCENDING"  }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
