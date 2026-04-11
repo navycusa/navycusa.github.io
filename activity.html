@@ -5,6 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Activity Log — US Navy CUSA Portal</title>
   <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .proof-section {
+      background: rgba(30,77,140,0.15);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin-bottom: 15px;
+    }
+    .proof-section h4 {
+      margin-bottom: 10px;
+      color: var(--text-secondary);
+    }
+    .proof-or {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 10px 0;
+    }
+    .proof-preview {
+      margin-top: 8px;
+      display: none;
+    }
+    .proof-preview img {
+      max-height: 120px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+    input[type="file"].form-control {
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    input[type="file"].form-control::file-selector-button {
+      background: var(--navy-light);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 10px;
+      margin-right: 10px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+  </style>
 </head>
 <body>
 
@@ -52,21 +97,16 @@
 
       <div class="page-header">
         <h1>Activity Log</h1>
-        <p>Submit duty minutes or hosted events for divisional review.</p>
+        <p>Submit duty minutes or hosted events for divisional review. At least one proof is required.</p>
       </div>
 
-      <!-- Submit Tabs -->
       <div class="card" style="margin-bottom:20px">
         <div class="tab-bar">
-          <button class="tab-btn active" data-tab="tab-duty">
-            &#9719; Log Duty Minutes
-          </button>
-          <button class="tab-btn" data-tab="tab-event">
-            &#9733; Log Event
-          </button>
+          <button class="tab-btn active" data-tab="tab-duty">⏱ Duty Minutes</button>
+          <button class="tab-btn" data-tab="tab-event">★ Host Event</button>
         </div>
 
-        <!-- Duty Tab -->
+        <!-- ── Duty Tab ── -->
         <div class="tab-panel active" id="tab-duty">
           <div id="duty-alert" class="alert hidden"></div>
           <form id="duty-form" novalidate>
@@ -83,25 +123,36 @@
             </div>
 
             <div class="form-group">
-              <label for="duty-discord">Discord Proof Link *</label>
-              <input type="url" id="duty-discord" class="form-control"
-                placeholder="https://discord.com/channels/..." required>
-              <div class="form-text">Link to a Discord message or screenshot proving completion.</div>
-            </div>
-
-            <div class="form-group">
               <label for="duty-notes">Notes</label>
               <textarea id="duty-notes" class="form-control"
-                placeholder="Optional: describe what you did during duty…"></textarea>
+                placeholder="Describe what you did during duty…"></textarea>
             </div>
 
-            <button type="submit" id="duty-submit" class="btn btn-primary">
-              Submit Duty Log
-            </button>
+            <!-- Proof section -->
+            <div class="proof-section">
+              <h4>📎 Proof (at least one required)</h4>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="duty-proof-image">Upload Image</label>
+                <input type="file" id="duty-proof-image" class="form-control"
+                  accept="image/jpeg,image/png,image/gif,image/webp">
+                <div class="form-text">JPEG, PNG, GIF or WebP · max 5 MB</div>
+                <div class="proof-preview" id="duty-img-preview">
+                  <img id="duty-img-thumb" src="" alt="Preview">
+                </div>
+              </div>
+              <div class="proof-or">— or —</div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="duty-discord">Discord Message Link</label>
+                <input type="url" id="duty-discord" class="form-control"
+                  placeholder="https://discord.com/channels/…">
+              </div>
+            </div>
+
+            <button type="submit" id="duty-submit" class="btn btn-primary">Submit Duty Log</button>
           </form>
         </div>
 
-        <!-- Event Tab -->
+        <!-- ── Event Tab ── -->
         <div class="tab-panel" id="tab-event">
           <div id="event-alert" class="alert hidden"></div>
           <form id="event-form" novalidate>
@@ -131,44 +182,49 @@
                   placeholder="Number of attendees" min="1">
               </div>
               <div class="form-group">
-                <label for="event-discord">Discord Proof Link *</label>
-                <input type="url" id="event-discord" class="form-control"
-                  placeholder="https://discord.com/channels/..." required>
+                <label for="event-desc">Description</label>
+                <textarea id="event-desc" class="form-control" placeholder="Describe the event…"></textarea>
               </div>
             </div>
 
-            <div class="form-group">
-              <label for="event-desc">Description</label>
-              <textarea id="event-desc" class="form-control"
-                placeholder="Describe the event…"></textarea>
+            <!-- Proof section -->
+            <div class="proof-section">
+              <h4>📎 Proof (at least one required)</h4>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="event-proof-image">Upload Image</label>
+                <input type="file" id="event-proof-image" class="form-control"
+                  accept="image/jpeg,image/png,image/gif,image/webp">
+                <div class="form-text">JPEG, PNG, GIF or WebP · max 5 MB</div>
+                <div class="proof-preview" id="event-img-preview">
+                  <img id="event-img-thumb" src="" alt="Preview">
+                </div>
+              </div>
+              <div class="proof-or">— or —</div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="event-discord">Discord Message Link</label>
+                <input type="url" id="event-discord" class="form-control"
+                  placeholder="https://discord.com/channels/…">
+              </div>
             </div>
 
-            <button type="submit" id="event-submit" class="btn btn-primary">
-              Submit Event Log
-            </button>
+            <button type="submit" id="event-submit" class="btn btn-primary">Submit Event Log</button>
           </form>
         </div>
       </div>
 
       <!-- My Submissions -->
       <div class="card">
-        <div class="card-header">
-          <h3>My Submissions</h3>
-        </div>
+        <div class="card-header"><h3>My Submissions</h3></div>
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
-                <th>Type</th>
-                <th>Details</th>
-                <th>Date</th>
-                <th>Proof</th>
-                <th>Status</th>
-                <th>Submitted</th>
+                <th>Type</th><th>Details</th><th>Date</th>
+                <th>Proof</th><th>Status</th><th>Submitted</th>
               </tr>
             </thead>
             <tbody id="my-logs-body">
-              <tr><td colspan="6" class="page-loading"><span class="spinner"></span> Loading…</td></tr>
+              <tr><td colspan="6" class="page-loading"><span class="spinner"></span></td></tr>
             </tbody>
           </table>
         </div>
@@ -182,9 +238,29 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-functions-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/js/firebase-config.js"></script>
+<script src="/js/supabase-config.js"></script>
 <script src="/js/ranks.js"></script>
 <script src="/js/auth.js"></script>
+<script>
+  // Image preview handlers
+  function setupPreview(inputId, previewId, thumbId) {
+    document.getElementById(inputId).addEventListener('change', function () {
+      const file = this.files[0];
+      const preview = document.getElementById(previewId);
+      const thumb   = document.getElementById(thumbId);
+      if (file) {
+        thumb.src = URL.createObjectURL(file);
+        preview.style.display = 'block';
+      } else {
+        preview.style.display = 'none';
+      }
+    });
+  }
+  setupPreview('duty-proof-image',  'duty-img-preview',  'duty-img-thumb');
+  setupPreview('event-proof-image', 'event-img-preview', 'event-img-thumb');
+</script>
 <script src="/js/activity.js"></script>
 </body>
 </html>

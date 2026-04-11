@@ -1,142 +1,139 @@
 // ============================================================
 // US Navy CUSA Portal — Firestore Security Rules
-// ============================================================
-// Deploy with:  firebase deploy --only firestore:rules
+// Deploy: firebase deploy --only firestore:rules
 // ============================================================
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Shared helpers ──────────────────────────────────────
+    // ── Core helpers ─────────────────────────────────────────
 
-    // Fetch the requesting user's profile (cached in rule evaluation)
-    function userDoc() {
+    function authed() {
+      return request.auth != null;
+    }
+
+    function selfDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // True when caller is authenticated and has a user document
-    function isAuth() {
-      return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-
-    // Caller's permission level integer
+    // int() coercion handles both number 100 and string "100" stored in Firestore
     function pl() {
-      return userDoc().permission_level;
+      return authed() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? int(selfDoc().get('permission_level', 0))
+        : 0;
     }
 
-    // True when caller has at least `level` permission
-    function hasPerm(level) {
-      return isAuth() && pl() >= level;
+    function divId() {
+      return authed() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? selfDoc().get('divisionId', '')
+        : '';
     }
 
-    // True when the caller is the owner of a document
-    function isOwner(uid) {
-      return isAuth() && request.auth.uid == uid;
+    // HQ = CNP+ (≥60) or Divisionless — can see across all divisions
+    function isHQ() {
+      return pl() >= 60 || divId() == 'ndvl' || divId() == '';
     }
 
-    // ── /users/{uid} ────────────────────────────────────────
+    // ── /users/{uid} ─────────────────────────────────────────
     match /users/{uid} {
 
-      // Anyone authenticated can read their own doc.
-      // CNP+ (≥60) can read all user docs (admin panel).
-      allow read: if isOwner(uid) || hasPerm(60);
+      // Own doc always readable; HQ (CNP+) or same division can read others
+      allow read: if authed() && (
+        request.auth.uid == uid
+        || pl() >= 60
+        || divId() == resource.data.get('divisionId', '__none__')
+      );
 
-      // CNP+ can create user documents for new personnel.
-      // They cannot assign a rank equal to or higher than their own.
-      allow create: if
-        hasPerm(60)
-        && request.resource.data.permission_level < pl()
-        && request.resource.data.permission_level > 0
-        && request.resource.data.mustChangePassword == true
-        && request.resource.data.isActive == true;
+      // CNP+ can create user docs for new personnel
+      // Cannot assign rank >= own level
+      allow create: if authed()
+        && pl() >= 60
+        && int(request.resource.data.get('permission_level', 0)) < pl()
+        && int(request.resource.data.get('permission_level', 0)) > 0
+        && request.resource.data.get('mustChangePassword', false) == true
+        && request.resource.data.get('isActive', false) == true;
 
-      // Allow self-update ONLY for mustChangePassword → false and passwordChangedAt.
-      // Admin-level updates (rank, division, isActive) are done by Cloud Functions
-      // or by admin users with higher permission level.
-      allow update: if
-        // Self: only allowed fields are the password-change fields
-        ( isOwner(uid)
+      // Self: only password-change fields
+      // CNP+ admin: rank/division/active, cannot touch docs with rank >= own
+      allow update: if authed() && (
+        (
+          request.auth.uid == uid
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['mustChangePassword', 'passwordChangedAt'])
         )
         ||
-        // Admin: CNP+ can update users, but not elevate above their own rank
-        ( hasPerm(60)
-          && request.auth.uid != uid   // can't self-edit via this path
-          && resource.data.permission_level < pl()
-          && request.resource.data.permission_level < pl()
-        );
+        (
+          pl() >= 60
+          && request.auth.uid != uid
+          && int(resource.data.get('permission_level', 0)) < pl()
+          && int(request.resource.data.get('permission_level', 0)) < pl()
+        )
+      );
 
-      // Only CNO+ can deactivate/delete users (soft-delete via isActive flag preferred)
-      allow delete: if hasPerm(70);
+      allow delete: if authed() && pl() >= 70;
     }
 
     // ── /divisions/{divisionId} ──────────────────────────────
     match /divisions/{divisionId} {
-      // All authenticated users can read divisions (needed for dropdowns)
-      allow read: if isAuth();
+      // All authenticated users can read (needed for dropdowns)
+      allow read: if authed();
 
-      // SecNav+ (≥90) can create and update divisions
-      allow create, update: if hasPerm(90);
-
-      // CNO+ (≥70) can update customRanks field within a division
-      // (handled by client with field-level check, Cloud Function is preferred)
-      allow delete: if hasPerm(90);
+      // SecNav+ (≥90) manage divisions
+      allow create, update: if authed() && pl() >= 90;
+      allow delete:         if authed() && pl() >= 90;
     }
 
     // ── /logs/{logId} ────────────────────────────────────────
     match /logs/{logId} {
 
-      // Owners can read their own logs.
-      // Lieutenant+ (≥32) in the same division can read pending logs.
-      // CNO+ can read all logs.
-      allow read: if
-        isOwner(resource.data.authorUid)
-        || hasPerm(70)
-        || ( hasPerm(32)
-             && resource.data.divisionId == userDoc().divisionId );
+      // Own logs always readable
+      // CNP+ (HQ) read all
+      // MCPO+ (≥42, Divisional Command) read same-division logs
+      allow read: if authed() && (
+        resource.data.authorUid == request.auth.uid
+        || pl() >= 60
+        || (pl() >= 42 && resource.data.get('divisionId', '') == divId())
+      );
 
-      // Authenticated users can create logs for themselves only
-      allow create: if
-        isAuth()
+      // Any authenticated user can create logs for themselves
+      allow create: if authed()
         && request.resource.data.authorUid == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.keys().hasAll([
-             'type','authorUid','authorUsername','divisionId',
-             'status','date','discordLink','createdAt'
-           ]);
+        && request.resource.data.keys().hasAll(['type', 'authorUid', 'status', 'createdAt']);
 
-      // Approval/rejection: Lieutenant+ (≥32) in the same division OR CNO+
-      // They may only change: status, reviewedBy, reviewerUsername, reviewedAt, reviewNotes
-      allow update: if
-        hasPerm(70)   // CNO+ can approve anything
-        || ( hasPerm(32)
-             && resource.data.divisionId == userDoc().divisionId
-             && resource.data.status == 'pending'
-             && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['status','reviewedBy','reviewerUsername','reviewedAt','reviewNotes'])
-             && request.resource.data.status in ['approved','rejected']
-           );
+      // Approve/reject:
+      //   CNP+ (≥60) can approve any log
+      //   MCPO+ (≥42) can approve/reject pending logs in their own division
+      allow update: if authed() && (
+        pl() >= 60
+        || (
+          pl() >= 42
+          && resource.data.status == 'pending'
+          && resource.data.get('divisionId', '') == divId()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status','reviewedBy','reviewerUsername','reviewedAt','reviewNotes'])
+          && request.resource.data.status in ['approved','rejected']
+        )
+      );
 
-      // Owners may delete their own PENDING logs.
-      // UnderSecNav+ may delete APPROVED logs (client-side archiving).
-      allow delete: if
-        (isOwner(resource.data.authorUid) && resource.data.status == 'pending')
-        || (hasPerm(85) && resource.data.status == 'approved');
+      // Owner can delete own pending logs
+      // UnderSecNav+ (≥85) can delete approved logs for archiving
+      allow delete: if authed() && (
+        (resource.data.authorUid == request.auth.uid && resource.data.status == 'pending')
+        || (pl() >= 85 && resource.data.status == 'approved')
+      );
     }
 
     // ── /audit_logs/{logId} ──────────────────────────────────
     match /audit_logs/{logId} {
-      // Authenticated users with CNP+ can read the audit trail
-      allow read: if hasPerm(60);
+      // CNP+ can read the audit trail
+      allow read: if authed() && pl() >= 60;
 
-      // Client-side writes are permitted for non-sensitive actions.
-      // Sensitive actions (user.create, archival) are written by Cloud Functions.
-      allow create: if
-        isAuth()
+      // Any authenticated user can write their own audit entries
+      allow create: if authed()
         && request.resource.data.actorUid == request.auth.uid
-        && request.resource.data.keys().hasAll(['action','actorUid','timestamp']);
+        && request.resource.data.keys().hasAll(['action', 'actorUid', 'timestamp']);
 
       // Audit logs are immutable
       allow update, delete: if false;
@@ -144,15 +141,12 @@ service cloud.firestore {
 
     // ── /archives/{archiveId} ────────────────────────────────
     match /archives/{archiveId} {
-      // UnderSecNav+ (≥85) can read and create archives
-      allow read:   if hasPerm(85);
-      allow create: if hasPerm(85);
-
-      // Archives are immutable once created
+      allow read:   if authed() && pl() >= 85;
+      allow create: if authed() && pl() >= 85;
       allow update, delete: if false;
     }
 
-    // ── Catch-all: deny everything else ─────────────────────
+    // ── Deny everything else ─────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

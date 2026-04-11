@@ -84,15 +84,19 @@
 
   // ── Pending Approvals (for divisional command) ────────────
   const pendingSection = document.getElementById('pending-section');
-  if (hasPerm(u.permission_level, PERM.APPROVE_LOGS) && u.divisionId) {
+  const isHQ = u.permission_level >= 60 || !u.divisionId || u.divisionId === 'ndvl';
+  if (hasPerm(u.permission_level, PERM.APPROVE_LOGS)) {
     pendingSection.classList.remove('hidden');
     try {
-      const pendSnap = await db.collection('logs')
-        .where('divisionId', '==', u.divisionId)
-        .where('status', '==', 'pending')
-        .orderBy('createdAt', 'desc')
-        .limit(5)
-        .get();
+      // HQ (CNP+) sees all pending; others see only their division
+      let pendQuery = isHQ
+        ? db.collection('logs').where('status', '==', 'pending').orderBy('createdAt', 'desc').limit(5)
+        : db.collection('logs')
+            .where('divisionId', '==', u.divisionId)
+            .where('status', '==', 'pending')
+            .orderBy('createdAt', 'desc')
+            .limit(5);
+      const pendSnap = await pendQuery.get();
 
       const tbody = document.getElementById('pending-logs-body');
       if (pendSnap.empty) {

@@ -249,7 +249,7 @@
 
       <div class="form-row">
         <div class="form-group">
-          <label for="um-rank">Rank *</label>
+          <label for="um-rank">Main Rank *</label>
           <select id="um-rank" class="form-control">
             <option value="">— Select Rank —</option>
           </select>
@@ -260,6 +260,14 @@
             <option value="">— Select Division —</option>
           </select>
         </div>
+      </div>
+
+      <div class="form-group hidden" id="um-div-rank-group">
+        <label for="um-div-rank">Divisional Rank</label>
+        <select id="um-div-rank" class="form-control">
+          <option value="">— None (use main rank only) —</option>
+        </select>
+        <div class="form-text">Optional. Permission level is derived from the mapped main rank.</div>
       </div>
 
       <div class="form-group">
@@ -280,12 +288,12 @@
      Modal: Add / Edit Division
 ══════════════════════════════════════════════════════════ -->
 <div class="modal-backdrop hidden" id="div-modal">
-  <div class="modal">
+  <div class="modal" style="max-width:680px">
     <div class="modal-header">
       <h3 id="div-modal-title">Add Division</h3>
       <button class="modal-close" id="div-modal-close">✕</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="max-height:75vh;overflow-y:auto">
       <div id="div-modal-alert" class="alert hidden"></div>
 
       <div class="form-row">
@@ -304,6 +312,56 @@
         <input type="url" id="dm-webhook" class="form-control"
           placeholder="https://discord.com/api/webhooks/…">
         <div class="form-text">Logs submitted by this division will be posted here.</div>
+      </div>
+
+      <!-- Division Ranks — shown for CNO+ (PERM.MANAGE_DIV_RANKS ≥ 70) -->
+      <div id="div-ranks-section" class="hidden" style="margin-top:20px">
+        <h4 style="margin-bottom:10px;color:var(--text-secondary)">Division Ranks</h4>
+        <div class="table-wrapper" style="margin-bottom:12px;max-height:220px;overflow-y:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank Name</th>
+                <th>Short</th>
+                <th>Tier / Category</th>
+                <th>Maps To</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="div-ranks-body">
+              <tr><td colspan="5" class="text-muted" style="padding:12px;text-align:center">
+                No ranks defined. Add one below.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Add rank mini-form -->
+        <div style="background:rgba(30,77,140,0.12);border:1px solid var(--border);border-radius:var(--radius);padding:14px">
+          <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Add Rank</p>
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom:10px">
+              <label for="dr-name">Rank Name *</label>
+              <input type="text" id="dr-name" class="form-control" placeholder="e.g. Junior Navy Instructor">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label for="dr-short">Short Name</label>
+              <input type="text" id="dr-short" class="form-control" placeholder="e.g. JNI" maxlength="12">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="margin-bottom:10px">
+              <label for="dr-tier">Tier / Category</label>
+              <input type="text" id="dr-tier" class="form-control" placeholder="e.g. POTC, POSC, General">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label for="dr-mapped-rank">Maps to Main Rank *</label>
+              <select id="dr-mapped-rank" class="form-control">
+                <option value="">— Select —</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" id="add-div-rank-btn" class="btn btn-secondary btn-sm">+ Add Rank to List</button>
+        </div>
       </div>
     </div>
     <div class="modal-footer">

@@ -25,56 +25,81 @@
   const eventTypeSelect = document.getElementById('event-type');
   EVENT_TYPES.forEach(t => {
     const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
+    opt.value = t; opt.textContent = t;
     eventTypeSelect.appendChild(opt);
   });
-
   eventTypeSelect.addEventListener('change', () => {
-    const customRow = document.getElementById('custom-event-row');
-    customRow.classList.toggle('hidden', eventTypeSelect.value !== 'Custom Event');
+    document.getElementById('custom-event-row')
+      .classList.toggle('hidden', eventTypeSelect.value !== 'Custom Event');
   });
+
+  // ── Shared: build log proof object from form inputs ───────
+  async function collectProof(imageInputId, discordInputId, alertId) {
+    const imageFile   = document.getElementById(imageInputId).files[0];
+    const discordLink = document.getElementById(discordInputId).value.trim();
+
+    if (!imageFile && !discordLink) {
+      showAlert(alertId, 'danger', 'Please provide at least one proof: upload an image or enter a Discord link.');
+      return null;
+    }
+    if (discordLink && !isValidUrl(discordLink)) {
+      showAlert(alertId, 'danger', 'Discord link must be a valid URL.');
+      return null;
+    }
+
+    let proofImageUrl = null;
+    if (imageFile) {
+      proofImageUrl = await uploadProofImage(imageFile, u.uid);
+    }
+
+    return { proofImageUrl, discordLink: discordLink || null };
+  }
 
   // ── Duty Log Form ─────────────────────────────────────────
   document.getElementById('duty-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = document.getElementById('duty-submit');
-    const minutes     = parseInt(document.getElementById('duty-minutes').value, 10);
-    const date        = document.getElementById('duty-date').value;
-    const notes       = document.getElementById('duty-notes').value.trim();
-    const discordLink = document.getElementById('duty-discord').value.trim();
+    const btn     = document.getElementById('duty-submit');
+    const minutes = parseInt(document.getElementById('duty-minutes').value, 10);
+    const date    = document.getElementById('duty-date').value;
+    const notes   = document.getElementById('duty-notes').value.trim();
 
-    if (!date || !discordLink) {
-      showAlert('duty-alert', 'danger', 'Date and Discord proof link are required.');
-      return;
-    }
-    if (!minutes || minutes < 1) {
-      showAlert('duty-alert', 'danger', 'Enter a valid number of duty minutes.');
-      return;
-    }
-    if (!isValidUrl(discordLink)) {
-      showAlert('duty-alert', 'danger', 'Please enter a valid Discord message URL as proof.');
-      return;
-    }
+    clearAlert('duty-alert');
+
+    if (!date) { showAlert('duty-alert', 'danger', 'Date is required.'); return; }
+    if (!minutes || minutes < 1) { showAlert('duty-alert', 'danger', 'Enter a valid number of duty minutes.'); return; }
 
     btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Uploading proof…';
+
+    let proof;
+    try {
+      proof = await collectProof('duty-proof-image', 'duty-discord', 'duty-alert');
+      if (!proof) { btn.disabled = false; btn.textContent = 'Submit Duty Log'; return; }
+    } catch (err) {
+      showAlert('duty-alert', 'danger', err.message);
+      btn.disabled = false; btn.textContent = 'Submit Duty Log';
+      return;
+    }
+
     btn.innerHTML = '<span class="spinner"></span> Submitting…';
-    clearAlert('duty-alert');
 
     try {
       const logRef = await db.collection('logs').add({
         type:            'duty',
         authorUid:       u.uid,
-        authorUsername:  u.username,
-        authorRankId:    u.rankId,
-        authorRankName:  u.rankName,
-        divisionId:      u.divisionId   || null,
-        divisionName:    u.divisionName || null,
+        authorUsername:  u.username          || null,
+        authorRankId:    u.rankId            || null,
+        authorRankName:  u.rankName          || null,
+        authorDivRankId: u.divRankId         || null,
+        authorDivRank:   u.divRankName       || null,
+        divisionId:      u.divisionId        || null,
+        divisionName:    u.divisionName      || null,
         status:          'pending',
         date:            firebase.firestore.Timestamp.fromDate(new Date(date)),
         durationMinutes: minutes,
-        notes:           notes,
-        discordLink:     discordLink,
+        notes:           notes               || null,
+        proofImageUrl:   proof.proofImageUrl,
+        discordLink:     proof.discordLink,
         createdAt:       firebase.firestore.FieldValue.serverTimestamp(),
         reviewedBy:      null,
         reviewedAt:      null,
@@ -83,14 +108,15 @@
 
       await auditLog('log.create', 'log', logRef.id, { type: 'duty', minutes });
 
-      // Notify Discord directly from browser (non-fatal if it fails)
+      // Notify Discord directly (non-fatal)
       sendDiscordNotification(u.divisionId, {
-        title: '⏱️ Duty Log Submitted',
-        color: 0x3498db,
+        title:  '⏱️ Duty Log Submitted — Pending Approval',
+        color:  0x3498db,
         fields: [
-          { name: 'Personnel', value: u.username,            inline: true },
-          { name: 'Duration',  value: `${minutes} minutes`,  inline: true },
-          { name: 'Proof',     value: `[View](${discordLink})`, inline: false },
+          { name: 'Personnel', value: u.username || '—',       inline: true },
+          { name: 'Duration',  value: `${minutes} min`,        inline: true },
+          { name: 'Division',  value: u.divisionName || '—',   inline: true },
+          ...(proof.discordLink ? [{ name: 'Discord Proof', value: `[View](${proof.discordLink})`, inline: false }] : []),
         ],
       });
 
@@ -99,6 +125,7 @@
       await loadMyLogs();
     } catch (err) {
       showAlert('duty-alert', 'danger', 'Submission failed: ' + err.message);
+      console.error('Duty log submit failed:', err);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Submit Duty Log';
@@ -108,47 +135,56 @@
   // ── Event Form ────────────────────────────────────────────
   document.getElementById('event-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = document.getElementById('event-submit');
-    const evtType     = document.getElementById('event-type').value;
-    const customName  = document.getElementById('custom-event-name').value.trim();
-    const date        = document.getElementById('event-date').value;
-    const participants= parseInt(document.getElementById('event-participants').value, 10) || 0;
-    const desc        = document.getElementById('event-desc').value.trim();
-    const discordLink = document.getElementById('event-discord').value.trim();
+    const btn          = document.getElementById('event-submit');
+    const evtType      = document.getElementById('event-type').value;
+    const customName   = document.getElementById('custom-event-name').value.trim();
+    const date         = document.getElementById('event-date').value;
+    const participants = parseInt(document.getElementById('event-participants').value, 10) || 0;
+    const desc         = document.getElementById('event-desc').value.trim();
 
-    if (!evtType || !date || !discordLink) {
-      showAlert('event-alert', 'danger', 'Event type, date, and Discord proof link are required.');
-      return;
-    }
+    clearAlert('event-alert');
+
+    if (!evtType)  { showAlert('event-alert', 'danger', 'Event type is required.'); return; }
+    if (!date)     { showAlert('event-alert', 'danger', 'Date is required.'); return; }
     if (evtType === 'Custom Event' && !customName) {
-      showAlert('event-alert', 'danger', 'Please name your custom event.');
-      return;
-    }
-    if (!isValidUrl(discordLink)) {
-      showAlert('event-alert', 'danger', 'Please enter a valid Discord message URL as proof.');
-      return;
+      showAlert('event-alert', 'danger', 'Please name your custom event.'); return;
     }
 
     btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Uploading proof…';
+
+    let proof;
+    try {
+      proof = await collectProof('event-proof-image', 'event-discord', 'event-alert');
+      if (!proof) { btn.disabled = false; btn.textContent = 'Submit Event Log'; return; }
+    } catch (err) {
+      showAlert('event-alert', 'danger', err.message);
+      btn.disabled = false; btn.textContent = 'Submit Event Log';
+      return;
+    }
+
     btn.innerHTML = '<span class="spinner"></span> Submitting…';
-    clearAlert('event-alert');
 
     try {
+      const displayName = evtType === 'Custom Event' ? customName : evtType;
       const logRef = await db.collection('logs').add({
         type:            'event',
         authorUid:       u.uid,
-        authorUsername:  u.username,
-        authorRankId:    u.rankId,
-        authorRankName:  u.rankName,
-        divisionId:      u.divisionId   || null,
-        divisionName:    u.divisionName || null,
+        authorUsername:  u.username          || null,
+        authorRankId:    u.rankId            || null,
+        authorRankName:  u.rankName          || null,
+        authorDivRankId: u.divRankId         || null,
+        authorDivRank:   u.divRankName       || null,
+        divisionId:      u.divisionId        || null,
+        divisionName:    u.divisionName      || null,
         status:          'pending',
         date:            firebase.firestore.Timestamp.fromDate(new Date(date)),
         eventType:       evtType,
         customEventName: evtType === 'Custom Event' ? customName : null,
         participants:    participants,
-        description:     desc,
-        discordLink:     discordLink,
+        description:     desc                || null,
+        proofImageUrl:   proof.proofImageUrl,
+        discordLink:     proof.discordLink,
         createdAt:       firebase.firestore.FieldValue.serverTimestamp(),
         reviewedBy:      null,
         reviewedAt:      null,
@@ -158,12 +194,13 @@
       await auditLog('log.create', 'log', logRef.id, { type: 'event', evtType });
 
       sendDiscordNotification(u.divisionId, {
-        title: `📋 Event Log — ${evtType === 'Custom Event' ? customName : evtType}`,
-        color: 0x9b59b6,
+        title:  `📋 Event Hosted — ${escHtml(displayName)}`,
+        color:  0x9b59b6,
         fields: [
-          { name: 'Personnel',   value: u.username,                           inline: true },
-          { name: 'Participants',value: String(participants || '—'),           inline: true },
-          { name: 'Proof',       value: `[View](${discordLink})`,             inline: false },
+          { name: 'Personnel',   value: u.username || '—',      inline: true },
+          { name: 'Participants',value: String(participants),    inline: true },
+          { name: 'Division',    value: u.divisionName || '—',  inline: true },
+          ...(proof.discordLink ? [{ name: 'Discord Proof', value: `[View](${proof.discordLink})`, inline: false }] : []),
         ],
       });
 
@@ -173,6 +210,7 @@
       await loadMyLogs();
     } catch (err) {
       showAlert('event-alert', 'danger', 'Submission failed: ' + err.message);
+      console.error('Event log submit failed:', err);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Submit Event Log';
@@ -182,9 +220,8 @@
   // ── My Logs List ──────────────────────────────────────────
   async function loadMyLogs() {
     const tbody = document.getElementById('my-logs-body');
-    tbody.innerHTML = `<tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px">
-      <span class="spinner"></span> Loading…</td></tr>`;
-
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px">
+      <span class="spinner"></span></td></tr>`;
     try {
       const snap = await db.collection('logs')
         .where('authorUid', '==', u.uid)
@@ -195,7 +232,7 @@
       if (snap.empty) {
         tbody.innerHTML = `<tr><td colspan="6">
           <div class="empty-state"><div class="empty-icon">📋</div>
-          <p>You haven't submitted any logs yet.</p></div></td></tr>`;
+          <p>No logs submitted yet.</p></div></td></tr>`;
         return;
       }
 
@@ -203,25 +240,28 @@
         const d = doc.data();
         const detail = d.type === 'duty'
           ? `${d.durationMinutes} min`
-          : (d.eventType === 'Custom Event' ? escHtml(d.customEventName) : escHtml(d.eventType));
-        const proof = d.discordLink
-          ? `<a href="${escHtml(d.discordLink)}" target="_blank" rel="noopener">View ↗</a>`
-          : '—';
+          : (d.eventType === 'Custom Event' ? escHtml(d.customEventName || '') : escHtml(d.eventType || ''));
+
+        const proofLinks = [
+          d.proofImageUrl ? `<a href="${escHtml(d.proofImageUrl)}" target="_blank" rel="noopener">🖼 Image</a>` : '',
+          d.discordLink   ? `<a href="${escHtml(d.discordLink)}"   target="_blank" rel="noopener">Discord ↗</a>` : '',
+        ].filter(Boolean).join(' · ') || '—';
+
         const reviewNote = d.reviewNotes
-          ? `<br><small class="text-muted">${escHtml(d.reviewNotes)}</small>`
-          : '';
+          ? `<br><small class="text-muted">${escHtml(d.reviewNotes)}</small>` : '';
+
         return `<tr>
           <td>${typeBadge(d.type)}</td>
           <td>${detail}</td>
           <td>${fmtDate(d.date)}</td>
-          <td>${proof}</td>
+          <td>${proofLinks}</td>
           <td>${statusBadge(d.status)}${reviewNote}</td>
           <td>${fmtDate(d.createdAt)}</td>
         </tr>`;
       }).join('');
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Failed to load logs.</td></tr>`;
-      console.error(e);
+      tbody.innerHTML = `<tr><td colspan="6" class="text-danger" style="padding:16px">Failed to load logs: ${escHtml(e.message)}</td></tr>`;
+      console.error('loadMyLogs failed:', e);
     }
   }
 
@@ -232,8 +272,6 @@
     try { new URL(str); return true; } catch { return false; }
   }
 
-  // Send a Discord embed directly from the browser.
-  // Reads the division's webhookUrl from Firestore. Non-fatal — never throws.
   async function sendDiscordNotification(divisionId, embed) {
     if (!divisionId) return;
     try {
@@ -243,11 +281,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          embeds: [{
-            ...embed,
-            footer:    { text: 'US Navy CUSA Portal' },
-            timestamp: new Date().toISOString(),
-          }],
+          embeds: [{ ...embed, footer: { text: 'US Navy CUSA Portal' }, timestamp: new Date().toISOString() }],
         }),
       });
     } catch (e) {
