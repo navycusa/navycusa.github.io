@@ -60,7 +60,8 @@
       <div class="page-header">
         <h1>QUOTA Management</h1>
         <p>Divisional Command (RDML+): quotas and requests for your division.
-          <strong>Headquarters</strong> quotas are managed only by the Secretary of the Navy (or SecNav+).</p>
+          <strong>Headquarters</strong> quotas are managed only by the Secretary of the Navy (or SecNav+).
+          <strong>CNP through Under Secretary</strong> may view pending requests for every division except Headquarters.</p>
       </div>
 
       <div id="qc-access-denied" class="alert alert-danger hidden">
@@ -68,6 +69,27 @@
       </div>
 
       <div id="qc-main" class="hidden">
+        <div id="qc-global-req-wrap" class="hidden mb-16">
+          <div class="card">
+            <div class="card-header"><h3>Pending requests — all divisions (except Headquarters)</h3></div>
+            <p class="text-muted" style="padding:8px 16px 0;font-size:0.85rem;margin:0">
+              Chief of Naval Personnel through Under Secretary: read-only across non-HQ divisions. Headquarters requests are visible only to SecNav and above.</p>
+            <div id="qc-global-req-alert" class="alert hidden" style="margin:12px 16px 0"></div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Division</th><th>Member</th><th>Type</th><th>Detail</th><th>Reason</th><th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="qc-global-req-body">
+                  <tr><td colspan="6" class="text-muted" style="padding:16px">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <div class="form-group mb-16" style="max-width:360px">
           <label for="qc-division">Division</label>
           <select id="qc-division" class="form-control"></select>

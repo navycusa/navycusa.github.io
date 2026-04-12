@@ -246,6 +246,12 @@
     };
   }
 
+  /** All pending requests the signed-in user may read (rules: CNP–Under SecNav = non-HQ only; SecNav+ = all). */
+  async function listPendingQuotaRequestsReadable() {
+    const snap = await db.collection('quota_requests').where('status', '==', 'pending').get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  }
+
   async function submitQuotaRequest(caller, payload) {
     const divisionId = caller.divisionId;
     if (!divisionId || divisionId === 'ndvl') {
@@ -476,6 +482,7 @@
     removeQuotaRowsForLog,
     resolveEventAttendees,
     listCommandData,
+    listPendingQuotaRequestsReadable,
     submitQuotaRequest,
     decideQuotaRequest,
     saveQuotaPolicy,

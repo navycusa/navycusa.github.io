@@ -79,6 +79,11 @@ const PERM = {
   QUOTA_DIV_COMMAND:     44,
   /** Secretary of the Navy+ — sole quota authority for Headquarters division */
   QUOTA_HQ_AUTHORITY:    90,
+  /**
+   * CNP (60) through Under SecNav (85): may read quota_requests for all non-HQ divisions only.
+   * SecNav+ and administrator see HQ as well (see firestore.rules).
+   */
+  QUOTA_READ_CROSS_DIV_NON_HQ_MIN: 60,
 };
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -114,6 +119,13 @@ function canManageDivisionQuota(user, divisionId, divisionIsHQ, userDivisionIsHQ
     ? userDivisionIsHQ
     : user.divisionId === HQ_DIVISION_ID;
   return uhq && user.rankId !== 'secnav';
+}
+
+/** CNP–Under SecNav: may view pending quota requests for every non-Headquarters division (not SecNav rank tier). */
+function canViewCrossDivisionNonHQQuotaRequests(user) {
+  return user.permission_level >= PERM.QUOTA_READ_CROSS_DIV_NON_HQ_MIN
+    && user.permission_level < PERM.QUOTA_HQ_AUTHORITY
+    && user.rankId !== 'secnav';
 }
 
 /** True if broad HQ stats/admin (CNP+), not tied to HQ quota authority. */

@@ -58,6 +58,11 @@
   deniedEl.classList.add('hidden');
   mainEl.classList.remove('hidden');
 
+  const globalReqWrap = document.getElementById('qc-global-req-wrap');
+  if (globalReqWrap && canViewCrossDivisionNonHQQuotaRequests(u)) {
+    globalReqWrap.classList.remove('hidden');
+  }
+
   manageable.forEach((d) => {
     const opt = document.createElement('option');
     opt.value = d.id;
@@ -120,6 +125,67 @@
     });
   });
 
+  function divisionLabel(divId) {
+    const d = divisions.find((x) => x.id === divId);
+    return d ? d.name + (d.isHeadquarters ? ' (HQ)' : '') : divId || '—';
+  }
+
+  function quotaRowDivisionIsHQ(divId) {
+    const d = divisions.find((x) => x.id === divId);
+    if (d) return d.isHeadquarters === true || d.id === HQ_DIVISION_ID;
+    return divId === HQ_DIVISION_ID;
+  }
+
+  async function refreshGlobalPending() {
+    if (!globalReqWrap || globalReqWrap.classList.contains('hidden')) return;
+    clearAlert('qc-global-req-alert');
+    try {
+      const rows = await QF.listPendingQuotaRequestsReadable();
+      const sorted = rows.slice().sort((a, b) => {
+        const da = (a.divisionId || '').localeCompare(b.divisionId || '');
+        return da !== 0 ? da : (a.requesterUsername || '').localeCompare(b.requesterUsername || '');
+      });
+      renderGlobalRequests(sorted);
+    } catch (e) {
+      console.error(e);
+      showAlert('qc-global-req-alert', 'danger', escHtml(e.message || String(e)));
+    }
+  }
+
+  function renderGlobalRequests(rows) {
+    const tbody = document.getElementById('qc-global-req-body');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">No pending requests in divisions you may view.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r) => {
+      const isH = quotaRowDivisionIsHQ(r.divisionId);
+      const canAct = canManageDivisionQuota(u, r.divisionId, isH, userDivisionIsHQ);
+      const detail = r.requestType === 'MDQRA'
+        ? `${r.reductionPercent}% reduction`
+        : `LOA ${escHtml(r.loaStart || '')} → ${escHtml(r.loaEnd || '')}`;
+      const actions = canAct
+        ? `<button type="button" class="btn btn-sm btn-success qc-gappr" data-id="${escHtml(r.id)}">Approve</button>
+           <button type="button" class="btn btn-sm btn-danger qc-grej" data-id="${escHtml(r.id)}">Reject</button>`
+        : '<span class="text-muted">View only</span>';
+      return `<tr>
+        <td>${escHtml(divisionLabel(r.divisionId))}</td>
+        <td>${escHtml(r.requesterUsername || '—')}</td>
+        <td>${escHtml(r.requestType)}</td>
+        <td>${detail}</td>
+        <td>${escHtml(r.reason || '—')}</td>
+        <td>${actions}</td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('.qc-gappr').forEach((b) => {
+      b.addEventListener('click', () => decide(b.dataset.id, true));
+    });
+    tbody.querySelectorAll('.qc-grej').forEach((b) => {
+      b.addEventListener('click', () => decide(b.dataset.id, false));
+    });
+  }
+
   async function refreshAll() {
     if (!currentDivisionId) return;
     try {
@@ -132,6 +198,7 @@
       showAlert('qc-req-alert', 'danger', escHtml(e.message || String(e)));
     }
     await refreshReform();
+    await refreshGlobalPending();
   }
 
   function renderRequests(rows) {

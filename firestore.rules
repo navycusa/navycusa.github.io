@@ -67,6 +67,29 @@ service cloud.firestore {
       );
     }
 
+    // Quota request doc read — matches js/ranks.js PERM (CNP = 60, SecNav tier = 90)
+    function quotaRequestDivisionId() {
+      return resource.data.get('divisionId', '');
+    }
+
+    // SecNav+ (or rank secnav): any division including Headquarters
+    function quotaCanReadAnyQuotaRequest() {
+      return quotaIsAdministrator() || pl() >= 90 || selfDoc().get('rankId', '') == 'secnav';
+    }
+
+    // CNP through Under SecNav: read non–Headquarters requests from any division (not HQ quota pipeline)
+    function quotaCanReadNonHQQuotaRequestGlobally() {
+      let rid = quotaRequestDivisionId();
+      return rid != '' && pl() >= 60 && pl() < 90 && !divisionHQFlag(rid);
+    }
+
+    // RDML+ in own division; if that division is HQ, SecNav+ only (same as manage policy)
+    function quotaCanReadOwnDivisionQuotaRequest() {
+      return pl() >= 44 && divId() != ''
+        && quotaRequestDivisionId() == divId()
+        && (!divisionHQFlag(divId()) || pl() >= 90 || selfDoc().get('rankId', '') == 'secnav');
+    }
+
     // ── /users/{uid} ─────────────────────────────────────────
     match /users/{uid} {
 
@@ -216,8 +239,9 @@ service cloud.firestore {
     match /quota_requests/{requestId} {
       allow read: if authed() && (
         resource.data.get('requesterUid', '') == request.auth.uid
-        || pl() >= 60
-        || (pl() >= 44 && resource.data.get('divisionId', '') == divId() && divId() != '')
+        || quotaCanReadAnyQuotaRequest()
+        || quotaCanReadNonHQQuotaRequestGlobally()
+        || quotaCanReadOwnDivisionQuotaRequest()
       );
       allow create: if authed()
         && request.resource.data.requesterUid == request.auth.uid
