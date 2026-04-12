@@ -44,6 +44,27 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/divisions/$(did)).data.get('isHeadquarters', false) == true;
     }
 
+    // Path /divisions/{divisionId} — is this doc the Headquarters division?
+    function divisionDocIsHQ(did) {
+      return did == 'hq' || divisionHQFlag(did);
+    }
+
+    // OCNP / OCNO — additional affiliation on user doc (list of string ids)
+    function isPersonnelOfficeStaff() {
+      return authed() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && selfDoc().get('personnelOffices', []) is list
+        && selfDoc().get('personnelOffices', []).hasAny(['ocnp', 'ocno']);
+    }
+
+    // Update division metadata: SecNav+ any; CNP+ any non-HQ; Admiral+ own division only (not NDVL)
+    function canUpdateDivisionDoc(did) {
+      return did != '' && did != 'ndvl' && (
+        pl() >= 90
+        || (pl() >= 60 && !divisionDocIsHQ(did))
+        || (pl() >= 50 && divId() == did && divId() != '')
+      );
+    }
+
     function quotaIsAdministrator() {
       return selfDoc().get('rankId', '') == 'administrator';
     }
@@ -94,23 +115,39 @@ service cloud.firestore {
     match /users/{uid} {
 
       // Own doc always readable; HQ (CNP+) or same division can read others
+      // OCNP/OCNO staff may read Navy Divisionless personnel
       allow read: if authed() && (
         request.auth.uid == uid
         || pl() >= 60
         || divId() == resource.data.get('divisionId', '__none__')
+        || (
+          isPersonnelOfficeStaff()
+          && resource.data.get('divisionId', '') == 'ndvl'
+        )
       );
 
       // CNP+ can create user docs for new personnel
+      // OCNP/OCNO staff (MCPO+): create Navy Divisionless accounts only
       // Cannot assign rank >= own level
       allow create: if authed()
-        && pl() >= 60
         && int(request.resource.data.get('permission_level', 0)) < pl()
         && int(request.resource.data.get('permission_level', 0)) > 0
         && request.resource.data.get('mustChangePassword', false) == true
-        && request.resource.data.get('isActive', false) == true;
+        && request.resource.data.get('isActive', false) == true
+        && (
+          (
+            pl() >= 60
+          )
+          || (
+            pl() >= 42
+            && isPersonnelOfficeStaff()
+            && request.resource.data.get('divisionId', '') == 'ndvl'
+          )
+        );
 
       // Self: only password-change fields
       // CNP+ admin: rank/division/active, cannot touch docs with rank >= own
+      // OCNP/OCNO: edit Navy Divisionless users only (division stays ndvl); cannot change personnelOffices
       allow update: if authed() && (
         (
           request.auth.uid == uid
@@ -124,6 +161,23 @@ service cloud.firestore {
           && int(resource.data.get('permission_level', 0)) < pl()
           && int(request.resource.data.get('permission_level', 0)) < pl()
         )
+        ||
+        (
+          pl() >= 42
+          && isPersonnelOfficeStaff()
+          && request.auth.uid != uid
+          && resource.data.get('divisionId', '') == 'ndvl'
+          && request.resource.data.get('divisionId', '') == 'ndvl'
+          && int(resource.data.get('permission_level', 0)) < pl()
+          && int(request.resource.data.get('permission_level', 0)) < pl()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly([
+                 'rankId', 'rankName', 'rankShort', 'permission_level',
+                 'divRankId', 'divRankName', 'divRankShort', 'divRankTier', 'mappedRankId',
+                 'divisionId', 'divisionName', 'isActive', 'email',
+                 'updatedAt', 'updatedBy'
+               ])
+        )
       );
 
       allow delete: if authed() && pl() >= 70;
@@ -134,9 +188,9 @@ service cloud.firestore {
       // All authenticated users can read (needed for dropdowns)
       allow read: if authed();
 
-      // SecNav+ (≥90) manage divisions
-      allow create, update: if authed() && pl() >= 90;
-      allow delete:         if authed() && pl() >= 90;
+      allow create: if authed() && pl() >= 90;
+      allow update: if authed() && canUpdateDivisionDoc(divisionId);
+      allow delete: if authed() && pl() >= 90;
     }
 
     // ── /logs/{logId} ────────────────────────────────────────

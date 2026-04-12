@@ -98,9 +98,9 @@
         <a class="sidebar-link" href="/activity.html"><span class="nav-icon">📋</span> Activity Log</a>
         <a class="sidebar-link" href="/quota-command.html" data-min-perm="44"><span class="nav-icon">📊</span> QUOTA Management</a>
       </div>
-      <div class="sidebar-section" data-min-perm="60">
+      <div class="sidebar-section" data-require-admin-panel>
         <div class="sidebar-label">Administration</div>
-        <a class="sidebar-link" href="/admin.html" data-min-perm="60">
+        <a class="sidebar-link" href="/admin.html">
           <span class="nav-icon">⚙️</span> Admin Panel
           <span id="pending-count" class="badge badge-pending hidden" style="margin-left:auto"></span>
         </a>
@@ -113,57 +113,6 @@
     </nav>
 
     <main class="main-content">
-
-      <!-- QUOTA summary -->
-      <div class="card hidden" id="quota-card" style="margin-bottom:20px">
-        <div class="card-header" style="flex-wrap:wrap;gap:8px">
-          <h3>Quota status</h3>
-          <span id="quota-badge" class="badge badge-pending hidden"></span>
-        </div>
-        <div style="padding:16px">
-          <div id="quota-loading" class="text-muted">Loading…</div>
-          <div id="quota-body" class="hidden">
-            <p id="quota-summary" style="margin-bottom:12px"></p>
-            <div class="progress-wrap" style="background:rgba(0,0,0,.2);border-radius:6px;height:10px;overflow:hidden;margin-bottom:12px">
-              <div id="quota-bar" style="height:100%;width:0%;background:var(--gold);transition:width .3s"></div>
-            </div>
-            <ul id="quota-rules" style="font-size:0.85rem;color:var(--text-secondary);margin:0;padding-left:18px"></ul>
-            <hr style="border-color:var(--border);margin:16px 0">
-            <h4 style="font-size:0.85rem;margin-bottom:8px">Requests</h4>
-            <div class="form-row" style="gap:12px;flex-wrap:wrap">
-              <div class="form-group" style="min-width:140px;margin:0">
-                <label for="quota-mdqra-pct">MDQRA % (1–100)</label>
-                <input type="number" id="quota-mdqra-pct" class="form-control" min="1" max="100" placeholder="%">
-              </div>
-              <div class="form-group" style="min-width:160px;margin:0">
-                <label for="quota-reason-mdqra">Reason</label>
-                <input type="text" id="quota-reason-mdqra" class="form-control" placeholder="Justification">
-              </div>
-              <div class="form-group" style="margin:0;align-self:flex-end">
-                <button type="button" id="quota-submit-mdqra" class="btn btn-sm btn-secondary">Submit MDQRA</button>
-              </div>
-            </div>
-            <div class="form-row" style="gap:12px;flex-wrap:wrap;margin-top:12px">
-              <div class="form-group" style="min-width:140px;margin:0">
-                <label for="quota-loa-start">LOA start</label>
-                <input type="date" id="quota-loa-start" class="form-control">
-              </div>
-              <div class="form-group" style="min-width:140px;margin:0">
-                <label for="quota-loa-end">LOA end</label>
-                <input type="date" id="quota-loa-end" class="form-control">
-              </div>
-              <div class="form-group" style="min-width:160px;margin:0">
-                <label for="quota-reason-loa">Reason</label>
-                <input type="text" id="quota-reason-loa" class="form-control" placeholder="Justification">
-              </div>
-              <div class="form-group" style="margin:0;align-self:flex-end">
-                <button type="button" id="quota-submit-loa" class="btn btn-sm btn-secondary">Submit LOA</button>
-              </div>
-            </div>
-            <div id="quota-req-msg" class="alert hidden" style="margin-top:12px"></div>
-          </div>
-        </div>
-      </div>
 
       <!-- Reform list (personnel) -->
       <div class="card hidden" id="reform-card" style="margin-bottom:20px">
@@ -305,6 +254,57 @@
               <tr><td colspan="5" class="page-loading"><span class="spinner"></span> Loading…</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- QUOTA summary (below primary dashboard content) -->
+      <div class="card hidden" id="quota-card" style="margin-bottom:20px;margin-top:8px">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
+          <h3>Quota status</h3>
+          <span id="quota-badge" class="badge badge-pending hidden"></span>
+        </div>
+        <div style="padding:16px">
+          <div id="quota-loading" class="text-muted">Loading…</div>
+          <div id="quota-body" class="hidden">
+            <p id="quota-summary" style="margin-bottom:12px"></p>
+            <div class="progress-wrap" style="background:rgba(0,0,0,.2);border-radius:6px;height:10px;overflow:hidden;margin-bottom:12px">
+              <div id="quota-bar" style="height:100%;width:0%;background:var(--gold);transition:width .3s"></div>
+            </div>
+            <ul id="quota-rules" style="font-size:0.85rem;color:var(--text-secondary);margin:0;padding-left:18px"></ul>
+            <hr style="border-color:var(--border);margin:16px 0">
+            <h4 style="font-size:0.85rem;margin-bottom:8px">Requests</h4>
+            <div class="form-row" style="gap:12px;flex-wrap:wrap">
+              <div class="form-group" style="min-width:140px;margin:0">
+                <label for="quota-mdqra-pct">MDQRA % (1–100)</label>
+                <input type="number" id="quota-mdqra-pct" class="form-control" min="1" max="100" placeholder="%">
+              </div>
+              <div class="form-group" style="min-width:160px;margin:0">
+                <label for="quota-reason-mdqra">Reason</label>
+                <input type="text" id="quota-reason-mdqra" class="form-control" placeholder="Justification">
+              </div>
+              <div class="form-group" style="margin:0;align-self:flex-end">
+                <button type="button" id="quota-submit-mdqra" class="btn btn-sm btn-secondary">Submit MDQRA</button>
+              </div>
+            </div>
+            <div class="form-row" style="gap:12px;flex-wrap:wrap;margin-top:12px">
+              <div class="form-group" style="min-width:140px;margin:0">
+                <label for="quota-loa-start">LOA start</label>
+                <input type="date" id="quota-loa-start" class="form-control">
+              </div>
+              <div class="form-group" style="min-width:140px;margin:0">
+                <label for="quota-loa-end">LOA end</label>
+                <input type="date" id="quota-loa-end" class="form-control">
+              </div>
+              <div class="form-group" style="min-width:160px;margin:0">
+                <label for="quota-reason-loa">Reason</label>
+                <input type="text" id="quota-reason-loa" class="form-control" placeholder="Justification">
+              </div>
+              <div class="form-group" style="margin:0;align-self:flex-end">
+                <button type="button" id="quota-submit-loa" class="btn btn-sm btn-secondary">Submit LOA</button>
+              </div>
+            </div>
+            <div id="quota-req-msg" class="alert hidden" style="margin-top:12px"></div>
+          </div>
         </div>
       </div>
 

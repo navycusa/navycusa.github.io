@@ -21,6 +21,7 @@ function currentUser() { return _currentUser; }
  * Options:
  *   allowChangePassword {bool}  – if true, don't redirect on mustChangePassword
  *   minPermission       {int}   – redirect to dashboard if user lacks this level
+ *   adminPanelAccess    {bool}  – if true, allow CNP+ or OCNP/OCNO staff (see ranks.js)
  *
  * Returns a Promise that resolves with the Firestore user data object.
  * Redirects away on any auth failure.
@@ -58,7 +59,12 @@ function requireAuth(options = {}) {
       }
 
       // Permission gate
-      if (options.minPermission && userData.permission_level < options.minPermission) {
+      if (options.adminPanelAccess) {
+        if (typeof canAccessAdminPanel === 'function' && !canAccessAdminPanel(userData)) {
+          window.location.href = '/dashboard.html';
+          return;
+        }
+      } else if (options.minPermission && userData.permission_level < options.minPermission) {
         window.location.href = '/dashboard.html';
         return;
       }
@@ -97,6 +103,64 @@ async function auditLog(action, targetType, targetId, details = {}) {
 }
 
 // ── Header / Layout ───────────────────────────────────────────
+let _mobileNavInitialized = false;
+
+function setupMobileNav() {
+  if (_mobileNavInitialized) return;
+  const appBody = document.querySelector('.app-body');
+  const sidebar = appBody && appBody.querySelector('.sidebar');
+  if (!appBody || !sidebar) return;
+  _mobileNavInitialized = true;
+
+  const header = document.querySelector('.site-header');
+  const spacer = header && header.querySelector('.header-spacer');
+  let btn = document.getElementById('nav-menu-btn');
+  if (!btn && header && spacer) {
+    btn = document.createElement('button');
+    btn.id = 'nav-menu-btn';
+    btn.type = 'button';
+    btn.className = 'nav-menu-btn';
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', 'Open navigation menu');
+    btn.textContent = '☰';
+    header.insertBefore(btn, spacer);
+  }
+
+  let overlay = appBody.querySelector('.nav-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.className = 'nav-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    appBody.insertBefore(overlay, sidebar);
+  }
+
+  function closeNav() {
+    appBody.classList.remove('sidebar-open');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+  function openNav() {
+    appBody.classList.add('sidebar-open');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+  }
+
+  if (btn) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (appBody.classList.contains('sidebar-open')) closeNav();
+      else openNav();
+    });
+  }
+  overlay.addEventListener('click', closeNav);
+  sidebar.querySelectorAll('a.sidebar-link').forEach((a) => {
+    a.addEventListener('click', () => {
+      if (window.matchMedia('(max-width: 768px)').matches) closeNav();
+    });
+  });
+  window.addEventListener('resize', () => {
+    if (!window.matchMedia('(max-width: 768px)').matches) closeNav();
+  });
+}
+
 function renderHeader(u) {
   const avatarEl   = document.getElementById('header-avatar');
   const nameEl     = document.getElementById('header-username');
@@ -104,12 +168,17 @@ function renderHeader(u) {
   if (avatarEl) avatarEl.textContent = (u.username || '?').charAt(0).toUpperCase();
   if (nameEl)   nameEl.textContent   = u.username  || '';
   if (rankEl)   rankEl.textContent   = u.rankName  || '';
+  setupMobileNav();
 }
 
 function applyPermissionUI(u) {
   document.querySelectorAll('[data-min-perm]').forEach(el => {
     const min = parseInt(el.dataset.minPerm, 10);
     el.classList.toggle('hidden', u.permission_level < min);
+  });
+  document.querySelectorAll('[data-require-admin-panel]').forEach(el => {
+    const ok = typeof canAccessAdminPanel === 'function' && canAccessAdminPanel(u);
+    el.classList.toggle('hidden', !ok);
   });
 }
 

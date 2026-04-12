@@ -51,6 +51,12 @@ const DEFAULT_DIVISIONS = [
 /** Firestore division doc id for standalone HQ (quota authority: Secretary of the Navy). */
 const HQ_DIVISION_ID = 'hq';
 
+/** Navy Divisionless — personnel without a primary command division. */
+const NDVL_DIVISION_ID = 'ndvl';
+
+/** Additional affiliations (not a primary division). Managed by CNP+; staff may invite/edit NDVL personnel. */
+const PERSONNEL_OFFICE_IDS = ['ocnp', 'ocno'];
+
 const EVENT_TYPES = [
   'Training Exercise',
   'Combat Operation',
@@ -131,6 +137,62 @@ function canViewCrossDivisionNonHQQuotaRequests(user) {
 /** True if broad HQ stats/admin (CNP+), not tied to HQ quota authority. */
 function isHQPersonnel(user) {
   return user.permission_level >= PERM.ADMIN_PANEL;
+}
+
+function hasPersonnelOfficeStaff(user) {
+  const o = user && user.personnelOffices;
+  return Array.isArray(o) && o.some((id) => PERSONNEL_OFFICE_IDS.includes(id));
+}
+
+/** Admin panel: CNP+ full access, or OCNP/OCNO staff (MCPO+) for divisionless personnel only. */
+function canAccessAdminPanel(user) {
+  if (!user) return false;
+  if (user.permission_level >= PERM.ADMIN_PANEL) return true;
+  return hasPersonnelOfficeStaff(user) && user.permission_level >= PERM.APPROVE_LOGS;
+}
+
+function canAssignPersonnelOffices(user) {
+  return user && user.permission_level >= PERM.ADMIN_PANEL;
+}
+
+function divisionDocumentIsHeadquarters(divId, divData) {
+  if (!divId) return false;
+  if (divId === HQ_DIVISION_ID) return true;
+  return !!(divData && divData.isHeadquarters === true);
+}
+
+/**
+ * Update an existing division doc (name, webhooks, ranks, events). Does not cover creating/deleting divisions.
+ * Headquarters division: Secretary of the Navy+ only. Other divisions: CNP+ cross-division, or Admiral+ in own division.
+ */
+function canEditDivisionDocument(user, targetDivId, targetDivData) {
+  if (!user || !targetDivId || targetDivId === NDVL_DIVISION_ID) return false;
+  if (user.permission_level >= PERM.MANAGE_DIVISIONS) return true;
+  if (divisionDocumentIsHeadquarters(targetDivId, targetDivData)) return false;
+  if (user.permission_level >= PERM.ADMIN_PANEL) return true;
+  if (
+    user.permission_level >= PERM.ARCHIVE_OWN_DIVISION
+    && user.divisionId === targetDivId
+  ) return true;
+  return false;
+}
+
+function canAddOrRemoveDivisions(user) {
+  return user && user.permission_level >= PERM.MANAGE_DIVISIONS;
+}
+
+function canEditDivisionRanksInModal(user, targetDivId, targetDivData) {
+  return (
+    canEditDivisionDocument(user, targetDivId, targetDivData)
+    && user.permission_level >= PERM.ARCHIVE_OWN_DIVISION
+  );
+}
+
+function canEditDivisionEventsInModal(user, targetDivId, targetDivData) {
+  return (
+    canEditDivisionDocument(user, targetDivId, targetDivData)
+    && user.permission_level >= PERM.MANAGE_DIV_EVENTS
+  );
 }
 
 function catBadge(cat) {

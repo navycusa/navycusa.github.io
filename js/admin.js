@@ -5,13 +5,19 @@
 (async function () {
   'use strict';
 
-  const u = await requireAuth({ minPermission: PERM.ADMIN_PANEL });
+  const u = await requireAuth({ adminPanelAccess: true });
   renderHeader(u);
   applyPermissionUI(u);
   markActiveSidebarLink();
   setupLogoutBtn();
 
-  const isHQ = u.permission_level >= 60 || !u.divisionId || u.divisionId === 'ndvl';
+  const isFullAdmin = u.permission_level >= PERM.ADMIN_PANEL;
+  const isPersonnelOfficeOnly = !isFullAdmin && hasPersonnelOfficeStaff(u);
+  const showDivisionsTab = !isPersonnelOfficeOnly && (
+    canAddOrRemoveDivisions(u)
+    || isHQPersonnel(u)
+    || (hasPerm(u.permission_level, PERM.ARCHIVE_OWN_DIVISION) && u.divisionId && u.divisionId !== NDVL_DIVISION_ID)
+  );
 
   // ── Tab routing ──────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -19,11 +25,51 @@
   });
 
   function switchTab(tabId) {
+    const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+    const panel = document.getElementById(tabId);
+    if ((btn && btn.classList.contains('hidden')) || (panel && panel.classList.contains('hidden'))) return;
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === tabId));
   }
 
-  if (window.location.hash === '#review') switchTab('tab-review');
+  function configureAdminTabs() {
+    const showReview = !isPersonnelOfficeOnly && hasPerm(u.permission_level, PERM.APPROVE_LOGS)
+      && (isHQPersonnel(u) || (u.divisionId && u.divisionId !== NDVL_DIVISION_ID));
+    const showMyDiv = hasPerm(u.permission_level, PERM.MANAGE_DIV_EVENTS)
+      && u.divisionId && u.divisionId !== NDVL_DIVISION_ID
+      && u.permission_level < PERM.ARCHIVE_OWN_DIVISION
+      && !isHQPersonnel(u)
+      && u.divisionId !== HQ_DIVISION_ID;
+    const showArchive = !isPersonnelOfficeOnly && (
+      (hasPerm(u.permission_level, PERM.ARCHIVE_OWN_DIVISION) && u.divisionId && u.divisionId !== NDVL_DIVISION_ID)
+      || hasPerm(u.permission_level, PERM.ARCHIVE_LOGS)
+    );
+    const showAudit = isFullAdmin;
+
+    const map = [
+      ['tab-users', true],
+      ['tab-review', showReview],
+      ['tab-my-division', showMyDiv],
+      ['tab-divisions', showDivisionsTab],
+      ['tab-archive', showArchive],
+      ['tab-audit', showAudit],
+    ];
+    map.forEach(([id, show]) => {
+      const panel = document.getElementById(id);
+      const b = document.querySelector(`.tab-btn[data-tab="${id}"]`);
+      if (panel) panel.classList.toggle('hidden', !show);
+      if (b) b.classList.toggle('hidden', !show);
+    });
+
+    if (isPersonnelOfficeOnly) switchTab('tab-users');
+    else if (window.location.hash === '#review' && showReview) switchTab('tab-review');
+    else if (!document.querySelector('.tab-btn.active:not(.hidden)')) {
+      const first = document.querySelector('.tab-btn:not(.hidden)');
+      if (first) switchTab(first.dataset.tab);
+    }
+  }
+
+  configureAdminTabs();
 
   // ══════════════════════════════════════════════════════════
   // TAB: Personnel
@@ -39,7 +85,11 @@
     tbody.innerHTML = loadingRow(6);
     try {
       let query = db.collection('users').orderBy('username');
-      if (!isHQ && u.divisionId) {
+      if (isPersonnelOfficeOnly) {
+        query = db.collection('users')
+          .where('divisionId', '==', NDVL_DIVISION_ID)
+          .orderBy('username');
+      } else if (!isHQPersonnel(u) && u.divisionId) {
         query = db.collection('users')
           .where('divisionId', '==', u.divisionId)
           .orderBy('username');
@@ -59,14 +109,22 @@
     tbody.innerHTML = list.map(usr => {
       const rankObj  = getRankById(usr.rankId);
       const cat      = rankObj ? catBadge(rankObj.cat) : 'badge-enlisted';
-      const canEdit  = u.permission_level > (usr.permission_level || 0);
+      const poTarget = hasPersonnelOfficeStaff(u) && usr.divisionId === NDVL_DIVISION_ID;
+      const canEdit  = u.permission_level > (usr.permission_level || 0)
+        && (isFullAdmin || poTarget);
       const rankDisplay = usr.divRankName
         ? `${escHtml(usr.divRankName)} <small class="text-muted">(${escHtml(usr.divRankTier || '')})</small>`
         : escHtml(usr.rankName || '—');
+      const poAff = Array.isArray(usr.personnelOffices)
+        ? usr.personnelOffices.filter((x) => PERSONNEL_OFFICE_IDS.includes(x))
+        : [];
+      const poLabel = poAff.length
+        ? ` <span class="text-muted" style="font-size:0.72rem">(${poAff.map((x) => x === 'ocnp' ? 'OCNP' : (x === 'ocno' ? 'OCNO' : x)).join(', ')})</span>`
+        : '';
       return `<tr>
         <td><strong>${escHtml(usr.username)}</strong></td>
         <td><span class="badge ${cat}">${rankDisplay}</span></td>
-        <td>${escHtml(usr.divisionName || '—')}</td>
+        <td>${escHtml(usr.divisionName || '—')}${poLabel}</td>
         <td><span class="badge ${usr.isActive !== false ? 'badge-approved' : 'badge-rejected'}">
           ${usr.isActive !== false ? 'Active' : 'Inactive'}</span></td>
         <td>${fmtDate(usr.createdAt)}</td>
@@ -89,11 +147,16 @@
 
   // ── User Modal ────────────────────────────────────────────
   window.openUserModal = async function (userId) {
-    const modal      = document.getElementById('user-modal');
-    const title      = document.getElementById('user-modal-title');
-    const rankSel    = document.getElementById('um-rank');
-    const divSel     = document.getElementById('um-division');
-    const divRankSel = document.getElementById('um-div-rank');
+    const modal       = document.getElementById('user-modal');
+    const title       = document.getElementById('user-modal-title');
+    const rankSel     = document.getElementById('um-rank');
+    const divSel      = document.getElementById('um-division');
+    const divRankSel  = document.getElementById('um-div-rank');
+    const divGroup    = document.getElementById('um-division-group');
+    const ndvlNote    = document.getElementById('um-ndvl-note');
+    const poGroup     = document.getElementById('um-personnel-offices-group');
+    const cbOcnp      = document.getElementById('um-ocnp');
+    const cbOcno      = document.getElementById('um-ocno');
 
     let divisions = [];
     try {
@@ -132,12 +195,29 @@
       });
     }
 
-    divSel.addEventListener('change', () => refreshDivRanks(divSel.value));
+    divSel.onchange = () => refreshDivRanks(divSel.value);
 
     rankSel.innerHTML = '<option value="">— Select Main Rank —</option>' +
       getRanksUpTo(u.permission_level - 1).map(r =>
         `<option value="${r.id}">${r.name} (${r.short})</option>`
       ).join('');
+
+    const showPoAffil = canAssignPersonnelOffices(u);
+    poGroup.classList.toggle('hidden', !showPoAffil);
+    if (showPoAffil) {
+      cbOcnp.checked = false;
+      cbOcno.checked = false;
+    }
+
+    if (isPersonnelOfficeOnly) {
+      divGroup.classList.add('hidden');
+      ndvlNote.classList.remove('hidden');
+      divSel.value = NDVL_DIVISION_ID;
+      await refreshDivRanks(divSel.value);
+    } else {
+      divGroup.classList.remove('hidden');
+      ndvlNote.classList.add('hidden');
+    }
 
     if (userId) {
       title.textContent = 'Edit Personnel';
@@ -145,17 +225,31 @@
       if (!usr) return;
       document.getElementById('um-username').value    = usr.username;
       document.getElementById('um-username').disabled = true;
-      divSel.value  = usr.divisionId  || '';
+      if (!isPersonnelOfficeOnly) {
+        divSel.value = usr.divisionId || '';
+      } else {
+        divSel.value = NDVL_DIVISION_ID;
+      }
       rankSel.value = usr.mappedRankId || usr.rankId || '';
       await refreshDivRanks(divSel.value);
       divRankSel.value = usr.divRankId || '';
       document.getElementById('um-active').checked = usr.isActive !== false;
+      if (showPoAffil) {
+        const poList = Array.isArray(usr.personnelOffices) ? usr.personnelOffices : [];
+        cbOcnp.checked = poList.includes('ocnp');
+        cbOcno.checked = poList.includes('ocno');
+      }
       document.getElementById('user-modal-save').onclick = () => saveUser(userId, usr);
     } else {
-      title.textContent = 'Add New Personnel';
+      title.textContent = isPersonnelOfficeOnly ? 'Add Navy Divisionless Personnel' : 'Add New Personnel';
       document.getElementById('um-username').value    = '';
       document.getElementById('um-username').disabled = false;
-      divSel.value  = '';
+      if (!isPersonnelOfficeOnly) {
+        divSel.value = '';
+      } else {
+        divSel.value = NDVL_DIVISION_ID;
+        await refreshDivRanks(divSel.value);
+      }
       rankSel.value = '';
       divRankSel.innerHTML = '<option value="">— None (use main rank) —</option>';
       document.getElementById('um-div-rank-group').classList.add('hidden');
@@ -177,7 +271,9 @@
   async function saveUser(userId, existing) {
     const username   = document.getElementById('um-username').value.trim();
     const rankId     = document.getElementById('um-rank').value;
-    const divisionId = document.getElementById('um-division').value;
+    const divisionId = isPersonnelOfficeOnly
+      ? NDVL_DIVISION_ID
+      : document.getElementById('um-division').value;
     const divRankId  = document.getElementById('um-div-rank').value;
     const isActive   = document.getElementById('um-active').checked;
     const btn        = document.getElementById('user-modal-save');
@@ -227,6 +323,13 @@
         userData.divRankId = null; userData.divRankName  = null;
         userData.divRankShort = null; userData.divRankTier = null;
         userData.mappedRankId = null;
+      }
+
+      if (canAssignPersonnelOffices(u)) {
+        const offices = [];
+        if (document.getElementById('um-ocnp').checked) offices.push('ocnp');
+        if (document.getElementById('um-ocno').checked) offices.push('ocno');
+        userData.personnelOffices = offices;
       }
 
       if (userId) {
@@ -290,7 +393,7 @@
     tbody.innerHTML = loadingRow(6);
     try {
       let query = db.collection('logs').where('status', '==', 'pending').orderBy('createdAt', 'asc');
-      if (!isHQ && u.divisionId) {
+      if (!isHQPersonnel(u) && u.divisionId) {
         query = db.collection('logs')
           .where('divisionId', '==', u.divisionId)
           .where('status', '==', 'pending')
@@ -383,7 +486,11 @@
   // ══════════════════════════════════════════════════════════
   // TAB: My Division  (MCPO+ — own division event types)
   // ══════════════════════════════════════════════════════════
-  if (hasPerm(u.permission_level, PERM.MANAGE_DIV_EVENTS) && u.divisionId && u.divisionId !== 'ndvl') {
+  if (hasPerm(u.permission_level, PERM.MANAGE_DIV_EVENTS)
+    && u.divisionId && u.divisionId !== NDVL_DIVISION_ID
+    && u.permission_level < PERM.ARCHIVE_OWN_DIVISION
+    && !isHQPersonnel(u)
+    && u.divisionId !== HQ_DIVISION_ID) {
     let _myDivEventTypes = [];
 
     async function loadMyDivisionTab() {
@@ -460,18 +567,36 @@
   }
 
   // ══════════════════════════════════════════════════════════
-  // TAB: Divisions  (SecNav+)
+  // TAB: Divisions
   // ══════════════════════════════════════════════════════════
   let allDivisions = [];
 
-  if (hasPerm(u.permission_level, PERM.MANAGE_DIVISIONS)) {
-    await loadDivisions();
-    document.getElementById('add-div-btn').addEventListener('click', () => openDivModal(null));
-  } else {
+  async function loadDivisions() {
+    const tbody = document.getElementById('divisions-body');
+    tbody.innerHTML = loadingRow(5);
     try {
       const snap = await db.collection('divisions').orderBy('name').get();
-      allDivisions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    } catch (_) {}
+      let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (!isHQPersonnel(u) && !canAddOrRemoveDivisions(u) && u.divisionId) {
+        list = list.filter(d => d.id === u.divisionId);
+      }
+      allDivisions = list;
+      renderDivisions();
+    } catch (e) {
+      console.error('loadDivisions failed:', e);
+      tbody.innerHTML = errorRow(5, e.message);
+    }
+  }
+
+  if (showDivisionsTab) {
+    await loadDivisions();
+
+    if (canAddOrRemoveDivisions(u)) {
+      document.getElementById('add-div-btn').addEventListener('click', () => openDivModal(null));
+    } else {
+      document.getElementById('add-div-btn').classList.add('hidden');
+      document.getElementById('seed-divisions-btn').classList.add('hidden');
+    }
   }
 
   function effectiveDivWebhookPending(div) {
@@ -479,19 +604,6 @@
   }
   function effectiveDivWebhookApproved(div) {
     return (div.webhookUrlApproved || div.webhookUrl || '').trim();
-  }
-
-  async function loadDivisions() {
-    const tbody = document.getElementById('divisions-body');
-    tbody.innerHTML = loadingRow(5);
-    try {
-      const snap = await db.collection('divisions').orderBy('name').get();
-      allDivisions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderDivisions();
-    } catch (e) {
-      console.error('loadDivisions failed:', e);
-      tbody.innerHTML = errorRow(5, e.message);
-    }
   }
 
   function renderDivisions() {
@@ -519,8 +631,10 @@
         <td>
           <span class="badge badge-command">${rankCount} rank${rankCount !== 1 ? 's' : ''}</span>
           <span class="badge badge-enlisted" style="margin-left:4px">${eventCount} event type${eventCount !== 1 ? 's' : ''}</span>
-          <button class="btn btn-sm btn-secondary" style="margin-left:6px"
-            onclick="openDivModal('${div.id}')">Edit</button>
+          ${canEditDivisionDocument(u, div.id, div)
+          ? `<button class="btn btn-sm btn-secondary" style="margin-left:6px"
+            onclick="openDivModal('${div.id}')">Edit</button>`
+          : '<span class="text-muted" style="margin-left:6px">—</span>'}
         </td>
       </tr>`;
     }).join('');
@@ -532,12 +646,26 @@
   let _editingDivId         = null;
 
   window.openDivModal = function (divId) {
+    if (!showDivisionsTab) return;
+    if (!divId && !canAddOrRemoveDivisions(u)) return;
+
     const modal = document.getElementById('div-modal');
     const title = document.getElementById('div-modal-title');
     clearAlert('div-modal-alert');
 
-    const canEditRanks  = hasPerm(u.permission_level, PERM.MANAGE_DIV_RANKS);
-    const canEditEvents = hasPerm(u.permission_level, PERM.MANAGE_DIV_EVENTS);
+    let canEditRanks;
+    let canEditEvents;
+    if (!divId) {
+      canEditRanks = canEditEvents = canAddOrRemoveDivisions(u);
+    } else {
+      const d = allDivisions.find(x => x.id === divId);
+      if (!d || !canEditDivisionDocument(u, divId, d)) {
+        showAlert('divisions-alert', 'danger', 'You cannot edit this division.');
+        return;
+      }
+      canEditRanks  = canEditDivisionRanksInModal(u, divId, d);
+      canEditEvents = canEditDivisionEventsInModal(u, divId, d);
+    }
     document.getElementById('div-ranks-section').classList.toggle('hidden',  !canEditRanks);
     document.getElementById('div-events-section').classList.toggle('hidden', !canEditEvents);
 
@@ -681,16 +809,36 @@
     const btn     = document.getElementById('div-modal-save');
     if (!name) { showAlert('div-modal-alert', 'danger', 'Division name is required.'); return; }
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    const existingDiv = divId ? allDivisions.find(d => d.id === divId) : null;
+    if (divId) {
+      if (!canEditDivisionDocument(u, divId, existingDiv)) {
+        showAlert('div-modal-alert', 'danger', 'You cannot edit this division.');
+        btn.disabled = false; btn.textContent = 'Save';
+        return;
+      }
+    } else if (!canAddOrRemoveDivisions(u)) {
+      showAlert('div-modal-alert', 'danger', 'Only Secretary of the Navy+ can add divisions.');
+      btn.disabled = false; btn.textContent = 'Save';
+      return;
+    }
+
+    const canSaveRanks  = divId
+      ? canEditDivisionRanksInModal(u, divId, existingDiv)
+      : canAddOrRemoveDivisions(u);
+    const canSaveEvents = divId
+      ? canEditDivisionEventsInModal(u, divId, existingDiv)
+      : canAddOrRemoveDivisions(u);
+
     const data = {
       name,
       short,
       webhookUrl:          whLeg,
       webhookUrlPending:   whPend,
       webhookUrlApproved:  whAppr,
-      ranks:      _editingDivRanks,
-      eventTypes: _editingDivEventTypes,
       updatedAt:  firebase.firestore.FieldValue.serverTimestamp(),
     };
+    if (canSaveRanks) data.ranks = _editingDivRanks;
+    if (canSaveEvents) data.eventTypes = _editingDivEventTypes;
     try {
       if (divId) {
         await db.collection('divisions').doc(divId).update(data);
@@ -712,30 +860,37 @@
     }
   }
 
-  document.getElementById('seed-divisions-btn').addEventListener('click', async () => {
-    if (!confirm('Seed the 5 default divisions into Firestore?')) return;
-    const btn = document.getElementById('seed-divisions-btn');
-    btn.disabled = true;
-    try {
-      const batch = db.batch();
-      DEFAULT_DIVISIONS.forEach(div => {
-        const ref = db.collection('divisions').doc(div.id);
-        batch.set(ref, {
-          name: div.name, short: div.short,
-          webhookUrl: '', ranks: [], eventTypes: [],
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-      });
-      await batch.commit();
-      await auditLog('division.seed', 'division', 'batch', {});
-      showAlert('divisions-alert', 'success', 'Default divisions seeded.');
-      await loadDivisions();
-    } catch (e) {
-      showAlert('divisions-alert', 'danger', e.message);
-    } finally {
-      btn.disabled = false;
-    }
-  });
+  if (showDivisionsTab && canAddOrRemoveDivisions(u)) {
+    document.getElementById('seed-divisions-btn').addEventListener('click', async () => {
+      if (!confirm('Seed the 5 default divisions into Firestore?')) return;
+      const btn = document.getElementById('seed-divisions-btn');
+      btn.disabled = true;
+      try {
+        const batch = db.batch();
+        DEFAULT_DIVISIONS.forEach(div => {
+          const ref = db.collection('divisions').doc(div.id);
+          const payload = {
+            name: div.name,
+            short: div.short,
+            webhookUrl: '',
+            ranks: [],
+            eventTypes: [],
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          };
+          if (div.isHeadquarters === true) payload.isHeadquarters = true;
+          batch.set(ref, payload, { merge: true });
+        });
+        await batch.commit();
+        await auditLog('division.seed', 'division', 'batch', {});
+        showAlert('divisions-alert', 'success', 'Default divisions seeded.');
+        await loadDivisions();
+      } catch (e) {
+        showAlert('divisions-alert', 'danger', e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
 
   // ══════════════════════════════════════════════════════════
   // TAB: Archive

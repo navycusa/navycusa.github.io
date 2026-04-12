@@ -38,7 +38,7 @@
         <a class="sidebar-link" href="/activity.html"><span class="nav-icon">📋</span> Activity Log</a>
         <a class="sidebar-link" href="/quota-command.html" data-min-perm="44"><span class="nav-icon">📊</span> QUOTA Management</a>
       </div>
-      <div class="sidebar-section" data-min-perm="60">
+      <div class="sidebar-section" data-require-admin-panel>
         <div class="sidebar-label">Administration</div>
         <a class="sidebar-link" href="/admin.html"><span class="nav-icon">⚙️</span> Admin Panel</a>
       </div>
@@ -64,10 +64,10 @@
         <button class="tab-btn" data-tab="tab-review">
           ⏳ Log Review
         </button>
-        <button class="tab-btn" data-tab="tab-my-division" data-min-perm="42">
-          🏴 My Division
+        <button class="tab-btn" data-tab="tab-my-division" id="tab-btn-my-division">
+          🏴 My division (events)
         </button>
-        <button class="tab-btn" data-tab="tab-divisions" data-min-perm="90">
+        <button class="tab-btn" data-tab="tab-divisions" id="tab-btn-divisions">
           🏛️ Divisions
         </button>
         <button class="tab-btn" data-tab="tab-archive" data-min-perm="50">
@@ -140,7 +140,8 @@
       </div>
 
       <!-- ════════════════════════════════════════════════════
-           TAB: My Division  (MCPO+ — manage own division's event types)
+           TAB: My division — MCPO+ in a single command (not HQ): event types only.
+           Admiral+ and CNP+ use Divisions tab for full settings.
       ════════════════════════════════════════════════════ -->
       <div class="tab-panel" id="tab-my-division">
         <div id="my-div-alert" class="alert hidden"></div>
@@ -170,7 +171,8 @@
       </div>
 
       <!-- ════════════════════════════════════════════════════
-           TAB: Divisions  (SecNav+ only)
+           TAB: Divisions — CNP+ edit all non-HQ divisions; SecNav+ includes HQ.
+           Admiral+ edit own division. Add/remove divisions: SecNav+ only.
       ════════════════════════════════════════════════════ -->
       <div class="tab-panel" id="tab-divisions">
         <div id="divisions-alert" class="alert hidden"></div>
@@ -293,19 +295,39 @@
         <div class="form-text">Initial password will be: <code>[Username]1234</code></div>
       </div>
 
-      <div class="form-row">
+      <div class="form-row" id="um-rank-division-row">
         <div class="form-group">
           <label for="um-rank">Main Rank *</label>
           <select id="um-rank" class="form-control">
             <option value="">— Select Rank —</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="um-division-group">
           <label for="um-division">Division *</label>
           <select id="um-division" class="form-control">
             <option value="">— Select Division —</option>
           </select>
         </div>
+      </div>
+      <p id="um-ndvl-note" class="form-text hidden" style="margin:-4px 0 12px">
+        New account will be <strong>Navy Divisionless (NDVL)</strong> — primary division is not assigned.
+      </p>
+
+      <div class="form-group hidden" id="um-personnel-offices-group">
+        <label style="text-transform:none;letter-spacing:0;font-size:0.8rem;color:var(--text-secondary)">
+          Personnel office affiliation (additional — does not replace division)
+        </label>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500">
+            <input type="checkbox" id="um-ocnp" style="width:16px;height:16px">
+            Office of the Chief of Naval Personnel (OCNP)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500">
+            <input type="checkbox" id="um-ocno" style="width:16px;height:16px">
+            Office of the Chief of Naval Operations (OCNO)
+          </label>
+        </div>
+        <div class="form-text">CNP+ may assign. OCNP/OCNO members may invite personnel as Navy Divisionless and edit their ranks.</div>
       </div>
 
       <div class="form-group hidden" id="um-div-rank-group">
@@ -372,7 +394,7 @@
         <div class="form-text">If set, used for any channel above that is left empty (matches older one-webhook behavior).</div>
       </div>
 
-      <!-- Division Ranks — shown for CNO+ (PERM.MANAGE_DIV_RANKS ≥ 70) -->
+      <!-- Division Ranks — Admiral+ / CNP+ with edit access (see js/ranks.js) -->
       <div id="div-ranks-section" class="hidden" style="margin-top:20px">
         <h4 style="margin-bottom:10px;color:var(--text-secondary)">Division Ranks</h4>
         <div class="table-wrapper" style="margin-bottom:12px;max-height:220px;overflow-y:auto">
