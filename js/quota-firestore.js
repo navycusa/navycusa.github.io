@@ -34,6 +34,8 @@
     };
   }
 
+  
+
   async function loadActiveRelief(userId, divisionId, periodStart, periodEnd) {
     const Quota = Q();
     const ps = new Date(periodStart);
@@ -452,12 +454,17 @@
     return { entryCount: batchEntries.length, snapshotId: snapRef.id };
   }
 
-  async function runReformAllDivisions() {
-    const divSnap = await db.collection('divisions').get();
+  /** @param {string[]} [divisionIds] divisions the caller may manage; required from UI so HQ-only rules are respected */
+  async function runReformAllDivisions(divisionIds) {
+    let ids = divisionIds;
+    if (!ids || !ids.length) {
+      const divSnap = await db.collection('divisions').get();
+      ids = divSnap.docs.map((d) => d.id);
+    }
     let total = 0;
-    for (const d of divSnap.docs) {
-      if (d.id === 'ndvl') continue;
-      const r = await runReformForDivision(d.id);
+    for (const id of ids) {
+      if (id === 'ndvl') continue;
+      const r = await runReformForDivision(id);
       total += r.entryCount || 0;
     }
     return { reformRows: total };

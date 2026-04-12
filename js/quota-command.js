@@ -2,6 +2,8 @@
 // US NAVY CUSA PORTAL — QUOTA Management (division / HQ authority)
 // ============================================================
 
+'use strict';
+
 (async function () {
   'use strict';
 
@@ -36,13 +38,16 @@
     divisions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }
 
+  await loadDivisions();
+  const userHomeDiv = divisions.find((d) => d.id === u.divisionId);
+  const userDivisionIsHQ = !!(userHomeDiv && (userHomeDiv.isHeadquarters === true || userHomeDiv.id === HQ_DIVISION_ID));
+
   function mayManageDiv(div) {
     if (!div) return false;
     const isHQ = div.isHeadquarters === true || div.id === HQ_DIVISION_ID;
-    return canManageDivisionQuota(u, div.id, isHQ);
+    return canManageDivisionQuota(u, div.id, isHQ, userDivisionIsHQ);
   }
 
-  await loadDivisions();
   const manageable = divisions.filter(mayManageDiv);
 
   if (!manageable.length) {
@@ -339,11 +344,11 @@
   document.getElementById('qc-reform-run').addEventListener('click', async () => {
     if (!confirm('Run reform assessment for ALL divisions now?')) return;
     try {
-      if (u.permission_level < PERM.QUOTA_HQ_AUTHORITY && u.rankId !== 'secnav') {
+      if (u.permission_level < PERM.QUOTA_HQ_AUTHORITY && u.rankId !== 'secnav' && u.rankId !== 'administrator') {
         alert('SecNav+ only.');
         return;
       }
-      const out = await QF.runReformAllDivisions();
+      const out = await QF.runReformAllDivisions(manageable.map((d) => d.id));
       alert('Done. Reform rows (total deficit entries): ' + (out.reformRows ?? '—'));
       await refreshReform();
     } catch (e) {

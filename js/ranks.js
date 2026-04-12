@@ -94,13 +94,26 @@ function hasPerm(userPL, required) {
   return userPL >= required;
 }
 
-/** True if caller may manage quotas for a division (RDML+ own div; SecNav+ for HQ only). */
-function canManageDivisionQuota(user, divisionId, divisionIsHQ) {
+/**
+ * True if caller may manage quotas for a division.
+ * — Administrator: all divisions.
+ * — Headquarters division (target): SecNav rank or pl ≥ QUOTA_HQ_AUTHORITY only.
+ * — Other divisions: RDML+ and (own division, or SecNav+, or HQ staff who are not SecNav).
+ * @param {boolean} [userDivisionIsHQ] caller's division has isHeadquarters (from /divisions); defaults to divisionId === HQ_DIVISION_ID only.
+ */
+function canManageDivisionQuota(user, divisionId, divisionIsHQ, userDivisionIsHQ) {
   if (!divisionId) return false;
+  if (user.rankId === 'administrator') return true;
   if (divisionIsHQ) {
     return user.permission_level >= PERM.QUOTA_HQ_AUTHORITY || user.rankId === 'secnav';
   }
-  return user.permission_level >= PERM.QUOTA_DIV_COMMAND && user.divisionId === divisionId;
+  if (user.permission_level < PERM.QUOTA_DIV_COMMAND) return false;
+  if (user.permission_level >= PERM.QUOTA_HQ_AUTHORITY || user.rankId === 'secnav') return true;
+  if (user.divisionId === divisionId) return true;
+  const uhq = userDivisionIsHQ !== undefined
+    ? userDivisionIsHQ
+    : user.divisionId === HQ_DIVISION_ID;
+  return uhq && user.rankId !== 'secnav';
 }
 
 /** True if broad HQ stats/admin (CNP+), not tied to HQ quota authority. */

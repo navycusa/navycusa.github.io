@@ -44,11 +44,26 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/divisions/$(did)).data.get('isHeadquarters', false) == true;
     }
 
-    // RDML+ own division; SecNav+ (or rank secnav) for Headquarters division only
+    function quotaIsAdministrator() {
+      return selfDoc().get('rankId', '') == 'administrator';
+    }
+
+    // Caller's home division is Headquarters (doc flag or id hq)
+    function quotaUserDivisionIsHQ() {
+      return divId() != '' && (divId() == 'hq' || divisionHQFlag(divId()));
+    }
+
+    // Administrator: all. HQ division target: SecNav+ only. Else: RDML+ own div, SecNav+, or HQ (non-SecNav) cross-division.
     function canManageQuotaForDivision(did) {
       return did != '' && did != 'ndvl' && (
-        (divisionHQFlag(did) && (pl() >= 90 || selfDoc().get('rankId', '') == 'secnav'))
-        || (!divisionHQFlag(did) && pl() >= 44 && divId() == did)
+        quotaIsAdministrator()
+        || (divisionHQFlag(did) && (pl() >= 90 || selfDoc().get('rankId', '') == 'secnav'))
+        || (!divisionHQFlag(did) && pl() >= 44 && (
+          divId() == did
+          || pl() >= 90
+          || selfDoc().get('rankId', '') == 'secnav'
+          || (quotaUserDivisionIsHQ() && selfDoc().get('rankId', '') != 'secnav')
+        ))
       );
     }
 

@@ -325,13 +325,24 @@ async function divisionIsHeadquarters(divisionId) {
   return snap.exists && snap.data().isHeadquarters === true;
 }
 
+async function callerHomeDivisionIsHeadquarters(caller) {
+  if (!caller.divisionId) return false;
+  if (caller.divisionId === 'hq') return true;
+  return divisionIsHeadquarters(caller.divisionId);
+}
+
 async function canManageDivisionQuota(caller, divisionId) {
   if (!divisionId) return false;
-  const hq = await divisionIsHeadquarters(divisionId);
-  if (hq) {
+  if (caller.rankId === 'administrator') return true;
+  const targetHQ = await divisionIsHeadquarters(divisionId);
+  if (targetHQ) {
     return caller.permission_level >= PERM_QUOTA_HQ || caller.rankId === 'secnav';
   }
-  return caller.permission_level >= PERM_QUOTA_DIV && caller.divisionId === divisionId;
+  if (caller.permission_level < PERM_QUOTA_DIV) return false;
+  if (caller.permission_level >= PERM_QUOTA_HQ || caller.rankId === 'secnav') return true;
+  if (caller.divisionId === divisionId) return true;
+  const callerHQ = await callerHomeDivisionIsHeadquarters(caller);
+  return callerHQ && caller.rankId !== 'secnav';
 }
 
 function effectiveQuotaRankId(user) {
@@ -927,7 +938,7 @@ exports.runReformAssessmentManual = functions
   .runWith({ timeoutSeconds: 300, memory: '512MB' })
   .https.onCall(async (data, context) => {
     const caller = await getCallerDoc(context);
-    if (caller.permission_level < PERM_QUOTA_HQ && caller.rankId !== 'secnav') {
+    if (caller.permission_level < PERM_QUOTA_HQ && caller.rankId !== 'secnav' && caller.rankId !== 'administrator') {
       throw new functions.https.HttpsError('permission-denied', 'SecNav+ only for manual reform run.');
     }
     return runReformForAllDivisions();
