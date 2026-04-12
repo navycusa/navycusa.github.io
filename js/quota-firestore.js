@@ -267,6 +267,38 @@
     return out;
   }
 
+  async function notifyQuotaDiscordSubmit(divisionId, reqLike) {
+    const DW = global.DiscordWebhooks;
+    if (!DW) return;
+    try {
+      const divSnap = await db.collection('divisions').doc(divisionId).get();
+      const divName = divSnap.exists ? divSnap.data().name : null;
+      await DW.postEmbed(db, divisionId, 'pending', DW.buildQuotaRequestPendingEmbed(reqLike, divName));
+    } catch (e) {
+      console.warn('Quota request Discord notify failed (non-fatal):', e.message || e);
+    }
+  }
+
+  async function notifyQuotaDiscordDecide(req, approve, decisionNotes, caller) {
+    const DW = global.DiscordWebhooks;
+    if (!DW) return;
+    try {
+      const divSnap = await db.collection('divisions').doc(req.divisionId).get();
+      const divName = divSnap.exists ? divSnap.data().name : null;
+      const merged = {
+        ...req,
+        status: approve ? 'approved' : 'rejected',
+        decisionNotes: decisionNotes || null,
+        decidedByUsername: caller.username,
+      };
+      const channel = approve ? 'approved' : 'pending';
+      await DW.postEmbed(db, req.divisionId, channel,
+        DW.buildQuotaRequestDecidedEmbed(merged, divName, approve, decisionNotes || null, caller.username));
+    } catch (e) {
+      console.warn('Quota decision Discord notify failed (non-fatal):', e.message || e);
+    }
+  }
+
   async function submitQuotaRequest(caller, payload) {
     const divisionId = caller.divisionId;
     if (!divisionId || divisionId === 'ndvl') {
@@ -285,6 +317,14 @@
         reason: payload.reason || null,
         createdAt: fv().serverTimestamp(),
       });
+      await notifyQuotaDiscordSubmit(divisionId, {
+        requestType: 'MDQRA',
+        requesterUid: caller.uid,
+        requesterUsername: caller.username,
+        divisionId,
+        reductionPercent: p,
+        reason: payload.reason || null,
+      });
       return;
     }
     if (payload.requestType === 'LOA') {
@@ -299,6 +339,15 @@
         loaEnd: payload.loaEnd,
         reason: payload.reason || null,
         createdAt: fv().serverTimestamp(),
+      });
+      await notifyQuotaDiscordSubmit(divisionId, {
+        requestType: 'LOA',
+        requesterUid: caller.uid,
+        requesterUsername: caller.username,
+        divisionId,
+        loaStart: payload.loaStart,
+        loaEnd: payload.loaEnd,
+        reason: payload.reason || null,
       });
       return;
     }
@@ -320,6 +369,7 @@
       decidedByUsername: caller.username,
       decisionNotes: decisionNotes || null,
     });
+    await notifyQuotaDiscordDecide(req, approve, decisionNotes, caller);
   }
 
   async function saveQuotaPolicy(callerUid, divisionId, data) {

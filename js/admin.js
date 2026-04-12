@@ -254,6 +254,20 @@
           createdBy: u.uid,
         });
         await auditLog('user.create', 'user', newUid, { username, rankId, divisionId });
+        if (window.DiscordWebhooks) {
+          await window.DiscordWebhooks.postEmbed(db, divisionId, 'pending', {
+            title:       '👤 New portal account',
+            color:       0x3498db,
+            description: `**${username}** was created (temporary password on first login).`,
+            fields: [
+              { name: 'Rank',       value: rankObj.name,   inline: true },
+              { name: 'Division',   value: divName,        inline: true },
+              { name: 'Created by', value: u.username || '—', inline: true },
+            ],
+            footer:      { text: 'US Navy CUSA Portal' },
+            timestamp:   new Date().toISOString(),
+          });
+        }
         showAlert('user-modal-alert', 'success',
           `User <strong>${escHtml(username)}</strong> created. Initial password: <code>${escHtml(username)}1234</code>`);
       }
@@ -326,13 +340,15 @@
         reviewNotes:      note || null,
       });
 
-      // On approval: send Discord embed WITH proof image, then delete image from Supabase
       if (decision === 'approved' && logData) {
+        if (window.DiscordWebhooks && logData.divisionId) {
+          await window.DiscordWebhooks.postEmbed(db, logData.divisionId, 'approved',
+            window.DiscordWebhooks.buildLogApprovedEmbed(logData));
+        }
+
         const proofUrl = logData.proofImageUrl || null;
-        await sendApprovalNotification(logData, proofUrl);
         if (proofUrl) {
           await deleteProofImage(proofUrl);
-          // Null out the URL in Firestore — proof is now on Discord
           await db.collection('logs').doc(logId).update({
             proofImageUrl: null,
             proofOnDiscord: true,
@@ -346,6 +362,12 @@
             console.error('Quota attendance sync failed:', qe);
           }
         }
+      } else if (decision === 'rejected' && logData && window.DiscordWebhooks && logData.divisionId) {
+        await window.DiscordWebhooks.postEmbed(db, logData.divisionId, 'pending',
+          window.DiscordWebhooks.buildLogRejectedEmbed(
+            { ...logData, reviewerUsername: u.username },
+            note || null,
+          ));
       }
 
       await auditLog(`log.${decision}`, 'log', logId, { reviewer: u.username, note });
@@ -357,51 +379,6 @@
       console.error('reviewLog failed:', e);
     }
   };
-
-  async function sendApprovalNotification(logData, proofUrl) {
-    if (!logData.divisionId) return;
-    try {
-      const divSnap = await db.collection('divisions').doc(logData.divisionId).get();
-      if (!divSnap.exists || !divSnap.data().webhookUrl) return;
-
-      const detail = logData.type === 'duty'
-        ? `${logData.durationMinutes} minutes`
-        : (logData.eventType === 'Custom Event' ? logData.customEventName : logData.eventType);
-
-      const ts = logData.date;
-      const dateStr = ts
-        ? new Date((ts.seconds ? ts.seconds * 1000 : ts)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : '—';
-
-      const embed = {
-        title:  logData.type === 'duty' ? '✅ Duty Log Approved' : `✅ Event Approved`,
-        color:  0x2ecc71,
-        fields: [
-          { name: 'Personnel', value: logData.authorUsername || '—', inline: true },
-          { name: 'Division',  value: logData.divisionName  || '—', inline: true },
-          { name: 'Details',   value: logData.type === 'duty'
-              ? `${logData.durationMinutes} min duty on ${dateStr}`
-              : `${detail || '—'} on ${dateStr}`,             inline: false },
-          ...(logData.discordLink
-            ? [{ name: 'Discord Proof', value: `[View](${logData.discordLink})`, inline: false }]
-            : []),
-        ],
-        footer:    { text: 'US Navy CUSA Portal' },
-        timestamp: new Date().toISOString(),
-      };
-
-      // Attach proof image directly in the embed
-      if (proofUrl) embed.image = { url: proofUrl };
-
-      await fetch(divSnap.data().webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ embeds: [embed] }),
-      });
-    } catch (e) {
-      console.warn('Discord approval notification failed (non-fatal):', e.message);
-    }
-  }
 
   // ══════════════════════════════════════════════════════════
   // TAB: My Division  (MCPO+ — own division event types)
@@ -497,32 +474,45 @@
     } catch (_) {}
   }
 
+  function effectiveDivWebhookPending(div) {
+    return (div.webhookUrlPending || div.webhookUrl || '').trim();
+  }
+  function effectiveDivWebhookApproved(div) {
+    return (div.webhookUrlApproved || div.webhookUrl || '').trim();
+  }
+
   async function loadDivisions() {
     const tbody = document.getElementById('divisions-body');
-    tbody.innerHTML = loadingRow(4);
+    tbody.innerHTML = loadingRow(5);
     try {
       const snap = await db.collection('divisions').orderBy('name').get();
       allDivisions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderDivisions();
     } catch (e) {
       console.error('loadDivisions failed:', e);
-      tbody.innerHTML = errorRow(4, e.message);
+      tbody.innerHTML = errorRow(5, e.message);
     }
   }
 
   function renderDivisions() {
     const tbody = document.getElementById('divisions-body');
     if (!allDivisions.length) {
-      tbody.innerHTML = emptyRow(4, '🏛️', 'No divisions yet. Click "Seed Defaults" to add the standard 5.');
+      tbody.innerHTML = emptyRow(5, '🏛️', 'No divisions yet. Click "Seed Defaults" to add the standard 5.');
       return;
     }
     tbody.innerHTML = allDivisions.map(div => {
       const rankCount  = (div.ranks      || []).length;
       const eventCount = (div.eventTypes || []).length;
+      const pUrl = effectiveDivWebhookPending(div);
+      const aUrl = effectiveDivWebhookApproved(div);
       return `<tr>
         <td><strong>${escHtml(div.name)}</strong></td>
         <td><code>${escHtml(div.short || '—')}</code></td>
-        <td>${div.webhookUrl
+        <td>${pUrl
+          ? `<span class="text-success">✓ Set</span>`
+          : `<span class="text-muted">Not set</span>`}
+        </td>
+        <td>${aUrl
           ? `<span class="text-success">✓ Set</span>`
           : `<span class="text-muted">Not set</span>`}
         </td>
@@ -557,7 +547,9 @@
       title.textContent = 'Edit Division';
       document.getElementById('dm-name').value    = div.name;
       document.getElementById('dm-short').value   = div.short      || '';
-      document.getElementById('dm-webhook').value = div.webhookUrl || '';
+      document.getElementById('dm-webhook-pending').value  = div.webhookUrlPending || '';
+      document.getElementById('dm-webhook-approved').value = div.webhookUrlApproved || '';
+      document.getElementById('dm-webhook-legacy').value   = div.webhookUrl || '';
       renderDivRanksList(div.ranks || [], divId);
       renderDivEventTypes(div.eventTypes || []);
       document.getElementById('div-modal-save').onclick = () => saveDivision(divId);
@@ -565,7 +557,9 @@
       title.textContent = 'Add Division';
       document.getElementById('dm-name').value    = '';
       document.getElementById('dm-short').value   = '';
-      document.getElementById('dm-webhook').value = '';
+      document.getElementById('dm-webhook-pending').value  = '';
+      document.getElementById('dm-webhook-approved').value = '';
+      document.getElementById('dm-webhook-legacy').value   = '';
       renderDivRanksList([], null);
       renderDivEventTypes([]);
       document.getElementById('div-modal-save').onclick = () => saveDivision(null);
@@ -681,12 +675,18 @@
   async function saveDivision(divId) {
     const name    = document.getElementById('dm-name').value.trim();
     const short   = document.getElementById('dm-short').value.trim();
-    const webhook = document.getElementById('dm-webhook').value.trim();
+    const whPend  = document.getElementById('dm-webhook-pending').value.trim();
+    const whAppr  = document.getElementById('dm-webhook-approved').value.trim();
+    const whLeg   = document.getElementById('dm-webhook-legacy').value.trim();
     const btn     = document.getElementById('div-modal-save');
     if (!name) { showAlert('div-modal-alert', 'danger', 'Division name is required.'); return; }
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
     const data = {
-      name, short, webhookUrl: webhook,
+      name,
+      short,
+      webhookUrl:          whLeg,
+      webhookUrlPending:   whPend,
+      webhookUrlApproved:  whAppr,
       ranks:      _editingDivRanks,
       eventTypes: _editingDivEventTypes,
       updatedAt:  firebase.firestore.FieldValue.serverTimestamp(),

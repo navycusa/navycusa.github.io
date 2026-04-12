@@ -7,8 +7,6 @@
 
 const functions = require('firebase-functions');
 const admin     = require('firebase-admin');
-const https     = require('https');
-const url       = require('url');
 const quotaLogic = require('./quotaLogic');
 
 admin.initializeApp();
@@ -122,73 +120,6 @@ exports.createUser = functions.https.onCall(async (data, context) => {
   await writeAudit('user.create', 'user', newUser.uid, caller, { username, rankId, divisionId });
 
   return { uid: newUser.uid, username, email };
-});
-
-// ============================================================
-// notifyDiscord
-// Called by: Activity log page after log creation
-// Posts an embed to the division's configured Discord webhook.
-// ============================================================
-exports.notifyDiscord = functions.https.onCall(async (data, context) => {
-  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in first.');
-
-  const { logId } = data;
-  if (!logId) throw new functions.https.HttpsError('invalid-argument', 'logId is required.');
-
-  // Fetch log
-  const logSnap = await db.collection('logs').doc(logId).get();
-  if (!logSnap.exists) throw new functions.https.HttpsError('not-found', 'Log not found.');
-  const log = logSnap.data();
-
-  // Only notify for own logs (or if admin)
-  if (log.authorUid !== context.auth.uid) {
-    const callerSnap = await db.collection('users').doc(context.auth.uid).get();
-    if (!callerSnap.exists || callerSnap.data().permission_level < 60) {
-      throw new functions.https.HttpsError('permission-denied', 'Cannot notify for another user\'s log.');
-    }
-  }
-
-  // Fetch division webhook
-  if (!log.divisionId) return { sent: false, reason: 'No division assigned.' };
-  const divSnap = await db.collection('divisions').doc(log.divisionId).get();
-  if (!divSnap.exists || !divSnap.data().webhookUrl) {
-    return { sent: false, reason: 'No webhook configured for this division.' };
-  }
-
-  const webhookUrl = divSnap.data().webhookUrl;
-
-  // Build Discord embed
-  const isEvent   = log.type === 'event';
-  const eventName = isEvent
-    ? (log.eventType === 'Custom Event' ? log.customEventName : log.eventType)
-    : null;
-
-  const embed = {
-    title:       isEvent ? `📋 Event Log — ${eventName}` : `⏱️ Duty Log Submitted`,
-    color:       isEvent ? 0x9b59b6 : 0x3498db,
-    description: `A new ${log.type} log has been submitted and is pending approval.`,
-    fields: [
-      { name: 'Personnel',  value: log.authorUsername,           inline: true },
-      { name: 'Rank',       value: log.authorRankName || '—',   inline: true },
-      { name: 'Division',   value: log.divisionName  || '—',   inline: true },
-    ],
-    footer: { text: 'US Navy CUSA Portal' },
-    timestamp: new Date().toISOString(),
-  };
-
-  if (isEvent) {
-    embed.fields.push({ name: 'Event Type',    value: eventName,                       inline: true });
-    embed.fields.push({ name: 'Participants',  value: String(log.participants || '—'), inline: true });
-  } else {
-    embed.fields.push({ name: 'Duration',      value: `${log.durationMinutes} minutes`, inline: true });
-  }
-
-  if (log.discordLink) {
-    embed.fields.push({ name: 'Proof', value: `[View Message](${log.discordLink})`, inline: false });
-  }
-
-  await postToWebhook(webhookUrl, { embeds: [embed] });
-  return { sent: true };
 });
 
 // ============================================================
@@ -945,26 +876,6 @@ exports.runReformAssessmentManual = functions
   });
 
 // ── Helpers ──────────────────────────────────────────────────
-function postToWebhook(webhookUrl, payload) {
-  return new Promise((resolve, reject) => {
-    const body   = JSON.stringify(payload);
-    const parsed = url.parse(webhookUrl);
-    const opts   = {
-      hostname: parsed.hostname,
-      path:     parsed.path,
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    };
-    const req = https.request(opts, res => {
-      res.on('data', () => {});
-      res.on('end', () => resolve());
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
 // Static rank list (mirrored from js/ranks.js — keep in sync)
 function getRankList() {
   return [

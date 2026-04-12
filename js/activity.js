@@ -232,17 +232,17 @@
 
       await auditLog('log.create', 'log', logRef.id, { type: 'duty', minutes, divisionId: logDivId });
 
-      // Notify Discord directly (non-fatal)
-      sendDiscordNotification(logDivId, {
-        title:  '⏱️ Duty Log Submitted — Pending Approval',
-        color:  0x3498db,
-        fields: [
-          { name: 'Personnel', value: u.username || '—',       inline: true },
-          { name: 'Duration',  value: `${minutes} min`,        inline: true },
-          { name: 'Division',  value: logDivName || '—',   inline: true },
-          ...(proof.discordLink ? [{ name: 'Discord Proof', value: `[View](${proof.discordLink})`, inline: false }] : []),
-        ],
-      });
+      if (window.DiscordWebhooks) {
+        await window.DiscordWebhooks.postEmbed(db, logDivId, 'pending',
+          window.DiscordWebhooks.buildLogPendingEmbed({
+            type: 'duty',
+            authorUsername: u.username,
+            authorRankName: u.rankName,
+            divisionName: logDivName,
+            durationMinutes: minutes,
+            discordLink: proof.discordLink,
+          }));
+      }
 
       showAlert('duty-alert', 'success', '&#10003; Duty log submitted and is pending approval.');
       e.target.reset();
@@ -310,7 +310,6 @@
     btn.innerHTML = '<span class="spinner"></span> Submitting…';
 
     try {
-      const displayName = evtType === 'Custom Event' ? customName : evtType;
       const logRef = await db.collection('logs').add({
         type:            'event',
         authorUid:       u.uid,
@@ -338,16 +337,19 @@
 
       await auditLog('log.create', 'log', logRef.id, { type: 'event', evtType, divisionId: logDivId });
 
-      sendDiscordNotification(logDivId, {
-        title:  `📋 Event Hosted — ${escHtml(displayName)}`,
-        color:  0x9b59b6,
-        fields: [
-          { name: 'Personnel',   value: u.username || '—',      inline: true },
-          { name: 'Participants',value: String(participants),    inline: true },
-          { name: 'Division',    value: logDivName || '—',  inline: true },
-          ...(proof.discordLink ? [{ name: 'Discord Proof', value: `[View](${proof.discordLink})`, inline: false }] : []),
-        ],
-      });
+      if (window.DiscordWebhooks) {
+        await window.DiscordWebhooks.postEmbed(db, logDivId, 'pending',
+          window.DiscordWebhooks.buildLogPendingEmbed({
+            type: 'event',
+            authorUsername: u.username,
+            authorRankName: u.rankName,
+            divisionName: logDivName,
+            eventType: evtType,
+            customEventName: evtType === 'Custom Event' ? customName : null,
+            participants,
+            discordLink: proof.discordLink,
+          }));
+      }
 
       showAlert('event-alert', 'success', '&#10003; Event log submitted and is pending approval.');
       e.target.reset();
@@ -416,22 +418,5 @@
   // ── Helpers ───────────────────────────────────────────────
   function isValidUrl(str) {
     try { new URL(str); return true; } catch { return false; }
-  }
-
-  async function sendDiscordNotification(divisionId, embed) {
-    if (!divisionId) return;
-    try {
-      const divSnap = await db.collection('divisions').doc(divisionId).get();
-      if (!divSnap.exists || !divSnap.data().webhookUrl) return;
-      await fetch(divSnap.data().webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          embeds: [{ ...embed, footer: { text: 'US Navy CUSA Portal' }, timestamp: new Date().toISOString() }],
-        }),
-      });
-    } catch (e) {
-      console.warn('Discord notification failed (non-fatal):', e.message);
-    }
   }
 })();

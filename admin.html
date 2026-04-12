@@ -190,12 +190,13 @@
               <tr>
                 <th>Division Name</th>
                 <th>Short Code</th>
-                <th>Discord Webhook</th>
+                <th>Discord — pending</th>
+                <th>Discord — approved</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="divisions-body">
-              <tr><td colspan="4" class="page-loading"><span class="spinner"></span></td></tr>
+              <tr><td colspan="5" class="page-loading"><span class="spinner"></span></td></tr>
             </tbody>
           </table>
         </div>
@@ -353,10 +354,22 @@
       </div>
 
       <div class="form-group">
-        <label for="dm-webhook">Discord Webhook URL</label>
-        <input type="url" id="dm-webhook" class="form-control"
+        <label for="dm-webhook-pending">Discord webhook — pending approvals</label>
+        <input type="url" id="dm-webhook-pending" class="form-control"
           placeholder="https://discord.com/api/webhooks/…">
-        <div class="form-text">Logs submitted by this division will be posted here.</div>
+        <div class="form-text">New duty/event logs, quota (LOA / MDQRA) requests, rejections, new accounts, etc.</div>
+      </div>
+      <div class="form-group">
+        <label for="dm-webhook-approved">Discord webhook — approved</label>
+        <input type="url" id="dm-webhook-approved" class="form-control"
+          placeholder="https://discord.com/api/webhooks/…">
+        <div class="form-text">Approved activity logs and approved quota requests.</div>
+      </div>
+      <div class="form-group">
+        <label for="dm-webhook-legacy">Legacy single webhook (optional)</label>
+        <input type="url" id="dm-webhook-legacy" class="form-control"
+          placeholder="https://discord.com/api/webhooks/…">
+        <div class="form-text">If set, used for any channel above that is left empty (matches older one-webhook behavior).</div>
       </div>
 
       <!-- Division Ranks — shown for CNO+ (PERM.MANAGE_DIV_RANKS ≥ 70) -->
@@ -437,6 +450,7 @@
 <script src="/js/supabase-config.js"></script>
 <script src="/js/ranks.js"></script>
 <script src="/js/auth.js"></script>
+<script src="/js/discord-webhooks.js"></script>
 <script src="/js/quota-firestore.js"></script>
 <script src="/js/admin.js"></script>
 </body>
