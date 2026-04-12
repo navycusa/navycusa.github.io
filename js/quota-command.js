@@ -140,7 +140,10 @@
     if (!globalReqWrap || globalReqWrap.classList.contains('hidden')) return;
     clearAlert('qc-global-req-alert');
     try {
-      const rows = await QF.listPendingQuotaRequestsReadable();
+      const nonHqDivisionIds = divisions
+        .filter((d) => d.id !== 'ndvl' && !(d.isHeadquarters === true || d.id === HQ_DIVISION_ID))
+        .map((d) => d.id);
+      const rows = await QF.listPendingQuotaRequestsForDivisions(nonHqDivisionIds);
       const sorted = rows.slice().sort((a, b) => {
         const da = (a.divisionId || '').localeCompare(b.divisionId || '');
         return da !== 0 ? da : (a.requesterUsername || '').localeCompare(b.requesterUsername || '');

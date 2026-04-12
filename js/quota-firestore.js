@@ -246,10 +246,25 @@
     };
   }
 
-  /** All pending requests the signed-in user may read (rules: CNP–Under SecNav = non-HQ only; SecNav+ = all). */
-  async function listPendingQuotaRequestsReadable() {
-    const snap = await db.collection('quota_requests').where('status', '==', 'pending').get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  /**
+   * Pending requests for given divisions only (one query per division).
+   * Required so Firestore rules can validate queries: a blanket `where('status','==','pending')`
+   * fails for CNP–Under SecNav because HQ pending docs would also match but are denied.
+   */
+  async function listPendingQuotaRequestsForDivisions(divisionIds) {
+    if (!divisionIds || !divisionIds.length) return [];
+    const ids = divisionIds.filter((id) => id && id !== 'ndvl');
+    const snaps = await Promise.all(
+      ids.map((divisionId) => db.collection('quota_requests')
+        .where('divisionId', '==', divisionId)
+        .where('status', '==', 'pending')
+        .get()),
+    );
+    const out = [];
+    snaps.forEach((snap) => {
+      snap.docs.forEach((d) => out.push({ id: d.id, ...d.data() }));
+    });
+    return out;
   }
 
   async function submitQuotaRequest(caller, payload) {
@@ -482,7 +497,7 @@
     removeQuotaRowsForLog,
     resolveEventAttendees,
     listCommandData,
-    listPendingQuotaRequestsReadable,
+    listPendingQuotaRequestsForDivisions,
     submitQuotaRequest,
     decideQuotaRequest,
     saveQuotaPolicy,
