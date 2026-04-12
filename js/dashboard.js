@@ -11,7 +11,7 @@
   markActiveSidebarLink();
   setupLogoutBtn();
 
-  const isHQ = u.permission_level >= 60 || !u.divisionId || u.divisionId === 'ndvl';
+  const isHQStats = isHQPersonnel(u);
 
   // ── Profile banner ────────────────────────────────────────
   document.getElementById('profile-avatar').textContent   = u.username.charAt(0).toUpperCase();
@@ -39,7 +39,7 @@
   } catch (e) { console.error('Personal stats failed:', e); }
 
   // ── Division stats ────────────────────────────────────────
-  if (isHQ) {
+  if (isHQStats) {
     // HQ: populate division selector, default to first
     const sel = document.getElementById('div-selector');
     sel.classList.remove('hidden');
@@ -175,7 +175,7 @@
   if (hasPerm(u.permission_level, PERM.APPROVE_LOGS)) {
     pendingSection.classList.remove('hidden');
     try {
-      const pendQuery = isHQ
+      const pendQuery = isHQStats
         ? db.collection('logs').where('status', '==', 'pending')
             .orderBy('createdAt', 'desc').limit(5)
         : db.collection('logs')
@@ -205,5 +205,136 @@
         if (countEl) { countEl.textContent = snap.size; countEl.classList.remove('hidden'); }
       }
     } catch (e) { console.error('Pending approvals failed:', e); }
+  }
+
+  // ── Quota (personnel) + reform list ───────────────────────
+  const quotaCard = document.getElementById('quota-card');
+  const reformCard = document.getElementById('reform-card');
+  if (quotaCard && u.divisionId && u.divisionId !== 'ndvl') {
+    quotaCard.classList.remove('hidden');
+    const QF = window.QuotaFirestore;
+    if (!QF) {
+      console.error('QuotaFirestore missing; quota UI disabled.');
+    } else {
+
+    async function loadQuotaUi() {
+      const loading = document.getElementById('quota-loading');
+      const body = document.getElementById('quota-body');
+      try {
+        const q = await QF.fetchNetStatus(u, u.uid);
+        loading.classList.add('hidden');
+        body.classList.remove('hidden');
+        const badge = document.getElementById('quota-badge');
+        const summary = document.getElementById('quota-summary');
+        const bar = document.getElementById('quota-bar');
+        const rulesEl = document.getElementById('quota-rules');
+
+        if (q.noPolicy) {
+          summary.innerHTML = '<span class="text-muted">No active quota policy is published for your rank in this division yet.</span>';
+          bar.style.width = '0%';
+          rulesEl.innerHTML = '';
+          badge.classList.add('hidden');
+          return;
+        }
+
+        if (q.exempt) {
+          badge.textContent = 'LOA exempt';
+          badge.classList.remove('hidden');
+          summary.innerHTML = `You are <strong>exempt</strong> from quota requirements for this period (${escHtml(q.periodStart)} – ${escHtml(q.periodEnd)}).`;
+          bar.style.width = '100%';
+          rulesEl.innerHTML = '';
+          return;
+        }
+
+        badge.classList.add('hidden');
+        if (q.mdqraPercent > 0) {
+          badge.textContent = `MDQRA −${q.mdqraPercent}%`;
+          badge.classList.remove('hidden');
+        }
+        const dutyNote =
+          q.dutyMinutesLogged != null && Number(q.dutyMinutesLogged) > 0
+            ? ` Approved duty time counted toward quota: <strong>${escHtml(String(q.dutyMinutesLogged))}</strong> min.`
+            : '';
+        summary.innerHTML = `Period: <strong>${escHtml(q.periodStart)}</strong> → <strong>${escHtml(q.periodEnd)}</strong> (${escHtml(q.periodKind)}).
+          Average rule completion: <strong>${escHtml(String(q.completionPct))}%</strong>.
+          Combined deficit (events + minutes): <strong>${escHtml(String(q.deficit))}</strong>.${dutyNote}
+          <span class="text-muted" style="font-size:0.8em">Use the rule list for units (events vs minutes).</span>`;
+        bar.style.width = `${Math.min(100, q.completionPct || 0)}%`;
+
+        function ruleUnits(r) {
+          if (r.unit === 'minutes' || r.type === 'duty_minutes') return 'min';
+          return 'events';
+        }
+        const rules = q.rules || [];
+        rulesEl.innerHTML = rules.length
+          ? rules.map((r) => `<li>${escHtml(r.label || r.type)}: ${escHtml(String(r.completed))}/${escHtml(String(r.required))} ${escHtml(ruleUnits(r))}</li>`).join('')
+          : '<li class="text-muted">No rule breakdown.</li>';
+      } catch (e) {
+        console.error('Quota load failed:', e);
+        loading.innerHTML = `<span class="text-danger">${escHtml(e.message || String(e))}</span>`;
+      }
+    }
+
+    async function loadReformUi() {
+      if (!reformCard || !u.divisionId) return;
+      reformCard.classList.remove('hidden');
+      const selfEl = document.getElementById('reform-self');
+      const tbody = document.getElementById('reform-table-body');
+      try {
+        const data = await QF.listReformSnapshot(u.divisionId);
+        if (!data.snapshot || !data.entries || !data.entries.length) {
+          selfEl.textContent = 'No reform list published for the latest assessment, or everyone met quota.';
+          tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No entries.</td></tr>';
+          return;
+        }
+        const mine = data.entries.find((e) => (e.userId || e.id) === u.uid);
+        selfEl.innerHTML = mine
+          ? `<strong>You are on the reform list</strong> — deficit ${escHtml(String(mine.deficit))}, ${escHtml(String(mine.completionPct))}% complete.`
+          : '<span class="text-muted">You are not on the current reform list.</span>';
+        tbody.innerHTML = data.entries.map((e) => `<tr>
+          <td>${escHtml(e.username || '—')}</td>
+          <td>${escHtml(String(e.deficit))}</td>
+          <td>${escHtml(String(e.completionPct))}%</td>
+        </tr>`).join('');
+      } catch (e) {
+        console.error('Reform list failed:', e);
+        reformCard.classList.add('hidden');
+      }
+    }
+
+    function showReqMsg(type, html) {
+      const el = document.getElementById('quota-req-msg');
+      el.className = `alert alert-${type}`;
+      el.innerHTML = html;
+      el.classList.remove('hidden');
+      if (type === 'success') setTimeout(() => el.classList.add('hidden'), 5000);
+    }
+
+    document.getElementById('quota-submit-mdqra').addEventListener('click', async () => {
+      const pct = parseInt(document.getElementById('quota-mdqra-pct').value, 10);
+      const reason = document.getElementById('quota-reason-mdqra').value.trim();
+      try {
+        await QF.submitQuotaRequest(u, { requestType: 'MDQRA', reductionPercent: pct, reason });
+        showReqMsg('success', 'MDQRA request submitted for division command approval.');
+      } catch (e) {
+        showReqMsg('danger', escHtml(e.message || String(e)));
+      }
+    });
+
+    document.getElementById('quota-submit-loa').addEventListener('click', async () => {
+      const loaStart = document.getElementById('quota-loa-start').value;
+      const loaEnd = document.getElementById('quota-loa-end').value;
+      const reason = document.getElementById('quota-reason-loa').value.trim();
+      try {
+        await QF.submitQuotaRequest(u, { requestType: 'LOA', loaStart, loaEnd, reason });
+        showReqMsg('success', 'LOA request submitted for division command approval.');
+      } catch (e) {
+        showReqMsg('danger', escHtml(e.message || String(e)));
+      }
+    });
+
+    await loadQuotaUi();
+    await loadReformUi();
+    }
   }
 })();

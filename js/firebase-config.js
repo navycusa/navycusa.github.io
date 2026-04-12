@@ -18,11 +18,13 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 
-const auth      = firebase.auth();
-const db        = firebase.firestore();
-const functions = firebase.functions();
+const auth = firebase.auth();
+const db   = firebase.firestore();
 
-// ── Emulator overrides (uncomment for local dev) ────────────
+// QUOTA / reform use Firestore + client JS (works on Spark — no Cloud Functions).
+// Optional: upgrade to Blaze and deploy functions/ for server-side automation.
+
+// Local dev: Firebase Console → Authentication → Authorized domains → add localhost, 127.0.0.1
+
 // auth.useEmulator('http://localhost:9099');
 // db.useEmulator('localhost', 8080);
-// functions.useEmulator('localhost', 5001);

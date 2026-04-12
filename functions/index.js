@@ -9,6 +9,7 @@ const functions = require('firebase-functions');
 const admin     = require('firebase-admin');
 const https     = require('https');
 const url       = require('url');
+const quotaLogic = require('./quotaLogic');
 
 admin.initializeApp();
 
@@ -18,6 +19,8 @@ const auth = admin.auth();
 // ── Permission level constants (must match js/ranks.js) ─────
 const PERM_ADMIN_PANEL      = 60;
 const PERM_ARCHIVE_LOGS     = 85;
+const PERM_QUOTA_DIV        = 44;
+const PERM_QUOTA_HQ         = 90;
 const EMAIL_DOMAIN          = '@navycusa.mil';
 
 // ── Helper: get caller's Firestore user doc ──────────────────
@@ -248,6 +251,12 @@ exports.onLogUpdated = functions.firestore
     } catch (e) {
       console.error('onLogUpdated audit write failed:', e);
     }
+
+    try {
+      await syncQuotaFromLog(context.params.logId, before, after);
+    } catch (e) {
+      console.error('syncQuotaFromLog failed:', e);
+    }
   });
 
 // ============================================================
@@ -305,6 +314,624 @@ exports.archiveLogs = functions
 
   return { count: archiveLogs.length, archiveId: archiveRef.id };
 });
+
+// ═══════════════════════════════════════════════════════════════
+// QUOTA — attendance sync, callables, reform job
+// ═══════════════════════════════════════════════════════════════
+
+async function divisionIsHeadquarters(divisionId) {
+  if (!divisionId) return false;
+  const snap = await db.collection('divisions').doc(divisionId).get();
+  return snap.exists && snap.data().isHeadquarters === true;
+}
+
+async function canManageDivisionQuota(caller, divisionId) {
+  if (!divisionId) return false;
+  const hq = await divisionIsHeadquarters(divisionId);
+  if (hq) {
+    return caller.permission_level >= PERM_QUOTA_HQ || caller.rankId === 'secnav';
+  }
+  return caller.permission_level >= PERM_QUOTA_DIV && caller.divisionId === divisionId;
+}
+
+function effectiveQuotaRankId(user) {
+  return user.mappedRankId || user.rankId || '';
+}
+
+async function resolveEventMatchFields(log) {
+  const divisionId = log.divisionId || null;
+  const isCustom = log.eventType === 'Custom Event';
+  const matchCustomName = isCustom ? (log.customEventName || '').trim() : null;
+  const matchEventType = !isCustom ? (log.eventType || null) : null;
+  let eventDefinitionId = log.eventDefinitionId || null;
+
+  if (!eventDefinitionId && divisionId) {
+    let q = db.collection('event_definitions').where('divisionId', '==', divisionId);
+    if (isCustom && matchCustomName) {
+      const snap = await q.where('matchCustomName', '==', matchCustomName).limit(1).get();
+      if (!snap.empty) eventDefinitionId = snap.docs[0].id;
+    } else if (matchEventType) {
+      const snap = await q.where('matchEventType', '==', matchEventType).limit(1).get();
+      if (!snap.empty) eventDefinitionId = snap.docs[0].id;
+    }
+  }
+
+  return {
+    eventDefinitionId,
+    matchEventType: matchEventType || null,
+    matchCustomName: matchCustomName || null,
+    isCustom: !!isCustom,
+  };
+}
+
+async function syncQuotaFromLog(logId, before, after) {
+  if (after.type !== 'event' && after.type !== 'duty') return;
+
+  const wasApproved = before.status === 'approved';
+  const isApproved = after.status === 'approved';
+
+  if (wasApproved && !isApproved) {
+    const q = await db.collection('quota_attendance').where('logId', '==', logId).get();
+    if (q.empty) return;
+    const batch = db.batch();
+    q.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    return;
+  }
+
+  if (!isApproved) return;
+
+  const existing = await db.collection('quota_attendance').where('logId', '==', logId).get();
+  const batch = db.batch();
+  existing.docs.forEach((d) => batch.delete(d.ref));
+
+  if (after.type === 'duty') {
+    const ref = db.collection('quota_attendance').doc();
+    batch.set(ref, {
+      logId,
+      userId: after.authorUid,
+      divisionId: after.divisionId || null,
+      occurredAt: after.date || admin.firestore.FieldValue.serverTimestamp(),
+      kind: 'duty',
+      minutes: Math.max(0, Number(after.durationMinutes) || 0),
+      role: 'host',
+    });
+    await batch.commit();
+    return;
+  }
+
+  const uids = new Set();
+  if (after.authorUid) uids.add(after.authorUid);
+  if (Array.isArray(after.attendeeUids)) {
+    after.attendeeUids.forEach((u) => {
+      if (typeof u === 'string' && u) uids.add(u);
+    });
+  }
+
+  const resolved = await resolveEventMatchFields(after);
+  const occurredAt = after.date || admin.firestore.FieldValue.serverTimestamp();
+
+  for (const uid of uids) {
+    const ref = db.collection('quota_attendance').doc();
+    batch.set(ref, {
+      logId,
+      userId: uid,
+      divisionId: after.divisionId || null,
+      occurredAt,
+      kind: 'event',
+      credits: 1,
+      role: uid === after.authorUid ? 'host' : 'attendee',
+      ...resolved,
+    });
+  }
+  await batch.commit();
+}
+
+async function loadPoliciesForDivision(divisionId) {
+  const snap = await db.collection('quota_policies').where('divisionId', '==', divisionId).get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+async function loadActiveModifiers(userId, divisionId, periodStart, periodEnd) {
+  const snap = await db.collection('quota_modifiers')
+    .where('userId', '==', userId)
+    .where('divisionId', '==', divisionId)
+    .where('active', '==', true)
+    .get();
+
+  let mdqraMax = 0;
+  let loaExempt = false;
+
+  const ps = new Date(periodStart);
+  const pe = new Date(periodEnd);
+
+  snap.forEach((doc) => {
+    const m = doc.data();
+    const s = quotaLogic.parseYMD(m.startDate);
+    if (!s) return;
+    let endBound = m.endDate ? quotaLogic.parseYMD(m.endDate) : new Date(8640000000000000);
+    if (!endBound) endBound = new Date(8640000000000000);
+    endBound.setUTCHours(23, 59, 59, 999);
+    const overlap = ps.getTime() <= endBound.getTime() && pe.getTime() >= s.getTime();
+    if (!overlap) return;
+
+    if (m.type === 'LOA') loaExempt = true;
+    if (m.type === 'MDQRA') {
+      const p = Number(m.reductionPercent) || 0;
+      if (p > mdqraMax) mdqraMax = p;
+    }
+  });
+
+  return { mdqraPercent: mdqraMax, loaExempt };
+}
+
+async function loadUserAttendances(userId, divisionId, start, end) {
+  const snap = await db.collection('quota_attendance')
+    .where('userId', '==', userId)
+    .where('divisionId', '==', divisionId)
+    .where('occurredAt', '>=', admin.firestore.Timestamp.fromDate(start))
+    .where('occurredAt', '<=', admin.firestore.Timestamp.fromDate(end))
+    .get();
+
+  return snap.docs.map((d) => d.data());
+}
+
+async function computeQuotaStatusForUser(userSnap, referenceDate = new Date()) {
+  const user = { uid: userSnap.id, ...userSnap.data() };
+  const divisionId = user.divisionId;
+  if (!divisionId || divisionId === 'ndvl') {
+    return { ok: true, noPolicy: true, message: 'No quota division assigned.' };
+  }
+
+  const policies = await loadPoliciesForDivision(divisionId);
+  const rankId = effectiveQuotaRankId(user);
+  const roughStart = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), 1));
+  const roughEnd = new Date(Date.UTC(
+    referenceDate.getUTCFullYear(),
+    referenceDate.getUTCMonth() + 1,
+    0, 23, 59, 59, 999,
+  ));
+
+  const policy = quotaLogic.selectPolicy(policies, divisionId, rankId, roughStart, roughEnd);
+  if (!policy) {
+    return {
+      ok: true,
+      noPolicy: true,
+      divisionId,
+      rankId,
+      periodStart: roughStart.toISOString().slice(0, 10),
+      periodEnd: roughEnd.toISOString().slice(0, 10),
+    };
+  }
+
+  const pk = policy.periodKind || 'weekly';
+  const bounds = quotaLogic.getPeriodBounds(pk, referenceDate);
+  const mods = await loadActiveModifiers(user.uid, divisionId, bounds.start, bounds.end);
+  const attendances = await loadUserAttendances(user.uid, divisionId, bounds.start, bounds.end);
+
+  const net = quotaLogic.computeNetQuota(
+    attendances,
+    policy,
+    mods.mdqraPercent,
+    mods.loaExempt,
+  );
+
+  return {
+    ok: true,
+    noPolicy: false,
+    divisionId,
+    rankId,
+    policyId: policy.id,
+    periodKind: pk,
+    periodStart: bounds.start.toISOString().slice(0, 10),
+    periodEnd: bounds.end.toISOString().slice(0, 10),
+    ...net,
+  };
+}
+
+exports.resolveEventAttendees = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const { divisionId, usernames } = data;
+  if (!divisionId || !Array.isArray(usernames)) {
+    throw new functions.https.HttpsError('invalid-argument', 'divisionId and usernames[] required.');
+  }
+  const hqPicker = caller.permission_level >= PERM_ADMIN_PANEL;
+  if (!hqPicker && caller.divisionId !== divisionId) {
+    throw new functions.https.HttpsError('permission-denied', 'Cannot resolve attendees for another division.');
+  }
+
+  const out = [];
+  for (const raw of usernames) {
+    const name = String(raw || '').trim();
+    if (!name) continue;
+    const snap = await db.collection('users').where('username', '==', name).limit(1).get();
+    if (snap.empty) {
+      out.push({ username: name, uid: null, reason: 'not_found' });
+      continue;
+    }
+    const doc = snap.docs[0];
+    const ud = doc.data();
+    if (ud.divisionId !== divisionId) {
+      out.push({ username: name, uid: null, reason: 'wrong_division' });
+      continue;
+    }
+    out.push({ username: name, uid: doc.id, reason: null });
+  }
+  return { attendees: out };
+});
+
+exports.getQuotaNetStatus = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  let targetUid = caller.uid;
+  if (data.targetUid && data.targetUid !== caller.uid) {
+    const tSnap = await db.collection('users').doc(data.targetUid).get();
+    if (!tSnap.exists) throw new functions.https.HttpsError('not-found', 'User not found.');
+    const t = tSnap.data();
+    if (!(await canManageDivisionQuota(caller, t.divisionId))) {
+      throw new functions.https.HttpsError('permission-denied', 'Cannot view quota for this member.');
+    }
+    targetUid = data.targetUid;
+  }
+
+  const refDate = data.referenceDate ? new Date(data.referenceDate + 'T12:00:00Z') : new Date();
+  const userSnap = await db.collection('users').doc(targetUid).get();
+  if (!userSnap.exists) throw new functions.https.HttpsError('not-found', 'User not found.');
+
+  return computeQuotaStatusForUser(userSnap, refDate);
+});
+
+exports.submitQuotaRequest = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const { requestType, reductionPercent, loaStart, loaEnd, reason } = data;
+  const divisionId = caller.divisionId;
+  if (!divisionId || divisionId === 'ndvl') {
+    throw new functions.https.HttpsError('failed-precondition', 'You must belong to a quota division.');
+  }
+
+  if (requestType === 'MDQRA') {
+    const p = Number(reductionPercent);
+    if (!(p > 0 && p <= 100)) {
+      throw new functions.https.HttpsError('invalid-argument', 'MDQRA requires reductionPercent between 1 and 100.');
+    }
+    const ref = await db.collection('quota_requests').add({
+      requestType: 'MDQRA',
+      requesterUid: caller.uid,
+      requesterUsername: caller.username,
+      divisionId,
+      status: 'pending',
+      reductionPercent: p,
+      reason: reason || null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await writeAudit('quota.request', 'quota_request', ref.id, caller, { type: 'MDQRA', p });
+    return { requestId: ref.id };
+  }
+
+  if (requestType === 'LOA') {
+    if (!loaStart || !loaEnd) {
+      throw new functions.https.HttpsError('invalid-argument', 'LOA requires loaStart and loaEnd (YYYY-MM-DD).');
+    }
+    const ref = await db.collection('quota_requests').add({
+      requestType: 'LOA',
+      requesterUid: caller.uid,
+      requesterUsername: caller.username,
+      divisionId,
+      status: 'pending',
+      loaStart,
+      loaEnd,
+      reason: reason || null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await writeAudit('quota.request', 'quota_request', ref.id, caller, { type: 'LOA', loaStart, loaEnd });
+    return { requestId: ref.id };
+  }
+
+  throw new functions.https.HttpsError('invalid-argument', 'requestType must be MDQRA or LOA.');
+});
+
+exports.decideQuotaRequest = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const { requestId, approve, decisionNotes } = data;
+  if (!requestId) throw new functions.https.HttpsError('invalid-argument', 'requestId required.');
+
+  const reqRef = db.collection('quota_requests').doc(requestId);
+  const reqSnap = await reqRef.get();
+  if (!reqSnap.exists) throw new functions.https.HttpsError('not-found', 'Request not found.');
+  const req = reqSnap.data();
+  if (req.status !== 'pending') {
+    throw new functions.https.HttpsError('failed-precondition', 'Request is not pending.');
+  }
+
+  if (!(await canManageDivisionQuota(caller, req.divisionId))) {
+    throw new functions.https.HttpsError('permission-denied', 'Not authorized to decide this request.');
+  }
+
+  const status = approve ? 'approved' : 'rejected';
+  await reqRef.update({
+    status,
+    decidedAt: admin.firestore.FieldValue.serverTimestamp(),
+    decidedByUid: caller.uid,
+    decidedByUsername: caller.username,
+    decisionNotes: decisionNotes || null,
+  });
+
+  if (approve && req.requestType === 'MDQRA') {
+    await db.collection('quota_modifiers').add({
+      userId: req.requesterUid,
+      divisionId: req.divisionId,
+      type: 'MDQRA',
+      reductionPercent: req.reductionPercent,
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: null,
+      sourceRequestId: requestId,
+      active: true,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+  if (approve && req.requestType === 'LOA') {
+    await db.collection('quota_modifiers').add({
+      userId: req.requesterUid,
+      divisionId: req.divisionId,
+      type: 'LOA',
+      startDate: req.loaStart,
+      endDate: req.loaEnd,
+      sourceRequestId: requestId,
+      active: true,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  await writeAudit('quota.decide', 'quota_request', requestId, caller, { status, approve });
+  return { ok: true, status };
+});
+
+exports.saveQuotaPolicy = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const {
+    policyId, divisionId, rankId, periodKind, effectiveFrom, effectiveTo, rules,
+  } = data;
+  if (!divisionId || !rankId || !effectiveFrom || !periodKind) {
+    throw new functions.https.HttpsError('invalid-argument', 'divisionId, rankId, periodKind, effectiveFrom required.');
+  }
+  if (!(await canManageDivisionQuota(caller, divisionId))) {
+    throw new functions.https.HttpsError('permission-denied', 'Not authorized to edit quotas for this division.');
+  }
+  if (!['weekly', 'monthly'].includes(periodKind)) {
+    throw new functions.https.HttpsError('invalid-argument', 'periodKind must be weekly or monthly.');
+  }
+
+  const payload = {
+    divisionId,
+    rankId,
+    periodKind,
+    effectiveFrom,
+    effectiveTo: effectiveTo || null,
+    rules: Array.isArray(rules) ? rules : [],
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedByUid: caller.uid,
+  };
+
+  if (policyId) {
+    const ref = db.collection('quota_policies').doc(policyId);
+    const ex = await ref.get();
+    if (!ex.exists) throw new functions.https.HttpsError('not-found', 'Policy not found.');
+    if (ex.data().divisionId !== divisionId) {
+      throw new functions.https.HttpsError('permission-denied', 'Cannot move policy between divisions.');
+    }
+    await ref.set({ ...ex.data(), ...payload }, { merge: true });
+    await writeAudit('quota.policy.update', 'quota_policy', policyId, caller, { divisionId, rankId });
+    return { policyId };
+  }
+
+  payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+  payload.createdByUid = caller.uid;
+  const ref = await db.collection('quota_policies').add(payload);
+  await writeAudit('quota.policy.create', 'quota_policy', ref.id, caller, { divisionId, rankId });
+  return { policyId: ref.id };
+});
+
+exports.saveEventDefinition = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const {
+    definitionId, divisionId, key, label, matchEventType, matchCustomName,
+  } = data;
+  if (!divisionId || !key || !label) {
+    throw new functions.https.HttpsError('invalid-argument', 'divisionId, key, and label are required.');
+  }
+  if (!(await canManageDivisionQuota(caller, divisionId))) {
+    throw new functions.https.HttpsError('permission-denied', 'Not authorized.');
+  }
+  const payload = {
+    divisionId,
+    key: String(key).trim(),
+    label: String(label).trim(),
+    matchEventType: matchEventType || null,
+    matchCustomName: matchCustomName || null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (definitionId) {
+    const ref = db.collection('event_definitions').doc(definitionId);
+    const ex = await ref.get();
+    if (!ex.exists) throw new functions.https.HttpsError('not-found', 'Definition not found.');
+    if (ex.data().divisionId !== divisionId) {
+      throw new functions.https.HttpsError('permission-denied', 'Division mismatch.');
+    }
+    await ref.set({ ...ex.data(), ...payload }, { merge: true });
+    return { definitionId };
+  }
+
+  payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+  const ref = await db.collection('event_definitions').add(payload);
+  await writeAudit('quota.event_def.create', 'event_definition', ref.id, caller, { divisionId, key });
+  return { definitionId: ref.id };
+});
+
+exports.deleteEventDefinition = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const { definitionId, divisionId } = data;
+  if (!definitionId || !divisionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'definitionId and divisionId required.');
+  }
+  if (!(await canManageDivisionQuota(caller, divisionId))) {
+    throw new functions.https.HttpsError('permission-denied', 'Not authorized.');
+  }
+  const ref = db.collection('event_definitions').doc(definitionId);
+  const ex = await ref.get();
+  if (!ex.exists || ex.data().divisionId !== divisionId) {
+    throw new functions.https.HttpsError('not-found', 'Definition not found.');
+  }
+  await ref.delete();
+  await writeAudit('quota.event_def.delete', 'event_definition', definitionId, caller, {});
+  return { ok: true };
+});
+
+exports.listQuotaCommandData = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const { divisionId } = data;
+  if (!divisionId) throw new functions.https.HttpsError('invalid-argument', 'divisionId required.');
+  if (!(await canManageDivisionQuota(caller, divisionId))) {
+    throw new functions.https.HttpsError('permission-denied', 'Not authorized.');
+  }
+
+  const [defsSnap, polSnap, reqSnap] = await Promise.all([
+    db.collection('event_definitions').where('divisionId', '==', divisionId).get(),
+    db.collection('quota_policies').where('divisionId', '==', divisionId).get(),
+    db.collection('quota_requests')
+      .where('divisionId', '==', divisionId)
+      .where('status', '==', 'pending')
+      .get(),
+  ]);
+
+  return {
+    eventDefinitions: defsSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    policies: polSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    pendingRequests: reqSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+  };
+});
+
+exports.listReformSnapshot = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+  const { divisionId, weekKey } = data;
+  if (!divisionId) throw new functions.https.HttpsError('invalid-argument', 'divisionId required.');
+
+  const divOk =
+    caller.permission_level >= PERM_ADMIN_PANEL ||
+    (caller.divisionId === divisionId && caller.permission_level >= 42) ||
+    (await canManageDivisionQuota(caller, divisionId));
+  if (!divOk) throw new functions.https.HttpsError('permission-denied', 'Not authorized.');
+
+  let chosen = null;
+  if (weekKey) {
+    const snap = await db.collection('reform_snapshots')
+      .where('divisionId', '==', divisionId)
+      .where('weekKey', '==', weekKey)
+      .limit(10)
+      .get();
+    if (!snap.empty) {
+      const sorted = snap.docs.slice().sort((a, b) => {
+        const ta = a.data().computedAt && a.data().computedAt.toMillis
+          ? a.data().computedAt.toMillis() : 0;
+        const tb = b.data().computedAt && b.data().computedAt.toMillis
+          ? b.data().computedAt.toMillis() : 0;
+        return tb - ta;
+      });
+      chosen = sorted[0];
+    }
+  } else {
+    const snap = await db.collection('reform_snapshots')
+      .where('divisionId', '==', divisionId)
+      .orderBy('computedAt', 'desc')
+      .limit(1)
+      .get();
+    if (!snap.empty) chosen = snap.docs[0];
+  }
+
+  if (!chosen) return { snapshot: null, entries: [] };
+
+  const entriesSnap = await chosen.ref.collection('entries').get();
+  return {
+    snapshot: { id: chosen.id, ...chosen.data() },
+    entries: entriesSnap.docs.map((e) => ({ id: e.id, ...e.data() })),
+  };
+});
+
+async function runReformForAllDivisions() {
+  const divSnap = await db.collection('divisions').get();
+  const refDate = new Date();
+  let totalEntries = 0;
+
+  for (const divDoc of divSnap.docs) {
+    const divisionId = divDoc.id;
+    if (divisionId === 'ndvl') continue;
+
+    const policies = await loadPoliciesForDivision(divisionId);
+    if (!policies.length) continue;
+
+    const periodKind = policies[0].periodKind || 'weekly';
+    const bounds = quotaLogic.getPeriodBounds(periodKind, refDate);
+    const weekKey = bounds.start.toISOString().slice(0, 10);
+
+    const usersSnap = await db.collection('users').where('divisionId', '==', divisionId).get();
+    const batchEntries = [];
+
+    for (const uDoc of usersSnap.docs) {
+      const st = await computeQuotaStatusForUser(uDoc, refDate);
+      if (st.noPolicy || st.exempt) continue;
+      if ((st.deficit || 0) <= 0) continue;
+
+      const u = uDoc.data();
+      batchEntries.push({
+        userId: uDoc.id,
+        username: u.username,
+        rankName: u.rankName,
+        requiredTotal: st.requiredTotal,
+        completedTotal: st.completedTotal,
+        deficit: st.deficit,
+        completionPct: st.completionPct,
+        detail: { rules: st.rules || [] },
+      });
+    }
+
+    const snapRef = db.collection('reform_snapshots').doc();
+    await snapRef.set({
+      divisionId,
+      weekKey,
+      periodKind,
+      periodStart: bounds.start.toISOString().slice(0, 10),
+      periodEnd: bounds.end.toISOString().slice(0, 10),
+      computedAt: admin.firestore.FieldValue.serverTimestamp(),
+      entryCount: batchEntries.length,
+    });
+
+    for (const ent of batchEntries) {
+      await snapRef.collection('entries').doc(ent.userId).set(ent);
+      totalEntries++;
+    }
+  }
+
+  return { divisions: divSnap.size, reformRows: totalEntries };
+}
+
+exports.runReformAssessment = functions
+  .runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .pubsub.schedule('0 5 * * 1')
+  .timeZone('Etc/UTC')
+  .onRun(async () => {
+    const out = await runReformForAllDivisions();
+    console.log('runReformAssessment', out);
+    return out;
+  });
+
+exports.runReformAssessmentManual = functions
+  .runWith({ timeoutSeconds: 300, memory: '512MB' })
+  .https.onCall(async (data, context) => {
+    const caller = await getCallerDoc(context);
+    if (caller.permission_level < PERM_QUOTA_HQ && caller.rankId !== 'secnav') {
+      throw new functions.https.HttpsError('permission-denied', 'SecNav+ only for manual reform run.');
+    }
+    return runReformForAllDivisions();
+  });
 
 // ── Helpers ──────────────────────────────────────────────────
 function postToWebhook(webhookUrl, payload) {

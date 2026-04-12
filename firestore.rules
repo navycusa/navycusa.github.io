@@ -38,6 +38,20 @@ service cloud.firestore {
       return pl() >= 60 || divId() == 'ndvl' || divId() == '';
     }
 
+    function divisionHQFlag(did) {
+      return did != ''
+        && exists(/databases/$(database)/documents/divisions/$(did))
+        && get(/databases/$(database)/documents/divisions/$(did)).data.get('isHeadquarters', false) == true;
+    }
+
+    // RDML+ own division; SecNav+ (or rank secnav) for Headquarters division only
+    function canManageQuotaForDivision(did) {
+      return did != '' && did != 'ndvl' && (
+        (divisionHQFlag(did) && (pl() >= 90 || selfDoc().get('rankId', '') == 'secnav'))
+        || (!divisionHQFlag(did) && pl() >= 44 && divId() == did)
+      );
+    }
+
     // ── /users/{uid} ─────────────────────────────────────────
     match /users/{uid} {
 
@@ -109,11 +123,17 @@ service cloud.firestore {
       allow create: if authed()
         && request.resource.data.authorUid == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.keys().hasAll(['type', 'authorUid', 'status', 'createdAt']);
+        && request.resource.data.keys().hasAll(['type', 'authorUid', 'status', 'createdAt'])
+        && (!request.resource.data.keys().hasAny(['attendeeUids']) || (
+          request.resource.data.type == 'event'
+          && request.resource.data.attendeeUids is list
+          && request.resource.data.attendeeUids.size() <= 40
+        ));
 
       // Approve/reject:
       //   CNP+ (≥60) can approve any log
       //   MCPO+ (≥42) can approve/reject pending logs in their own division
+      //   MCPO+ may set attendeeUids / eventDefinitionId on pending event logs (quota)
       allow update: if authed() && (
         pl() >= 60
         || (
@@ -123,6 +143,14 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['status','reviewedBy','reviewerUsername','reviewedAt','reviewNotes'])
           && request.resource.data.status in ['approved','rejected']
+        )
+        || (
+          pl() >= 42
+          && resource.data.status == 'pending'
+          && resource.data.get('divisionId', '') == divId()
+          && request.resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['attendeeUids','eventDefinitionId'])
         )
       );
 
@@ -167,6 +195,123 @@ service cloud.firestore {
             && request.resource.data.divisionId != null)
       );
       allow update, delete: if false;
+    }
+
+    // ── /quota_requests/{id} — client + rules (Spark / no Cloud Functions) ──
+    match /quota_requests/{requestId} {
+      allow read: if authed() && (
+        resource.data.get('requesterUid', '') == request.auth.uid
+        || pl() >= 60
+        || (pl() >= 44 && resource.data.get('divisionId', '') == divId() && divId() != '')
+      );
+      allow create: if authed()
+        && request.resource.data.requesterUid == request.auth.uid
+        && request.resource.data.divisionId == divId()
+        && divId() != '' && divId() != 'ndvl'
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestType in ['MDQRA', 'LOA']
+        && request.resource.data.keys().hasAll(['requestType', 'requesterUid', 'divisionId', 'status', 'createdAt'])
+        && (
+          (request.resource.data.requestType == 'MDQRA'
+            && request.resource.data.reductionPercent is number
+            && request.resource.data.reductionPercent > 0
+            && request.resource.data.reductionPercent <= 100)
+          || (request.resource.data.requestType == 'LOA'
+            && request.resource.data.loaStart is string
+            && request.resource.data.loaEnd is string)
+        );
+      allow update: if authed()
+        && canManageQuotaForDivision(resource.data.divisionId)
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['approved', 'rejected']
+        && request.resource.data.decidedByUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'decidedAt', 'decidedByUid', 'decidedByUsername', 'decisionNotes']);
+      allow delete: if false;
+    }
+
+    // ── /quota_modifiers/{id} — legacy (Cloud-created only); read for quota math ──
+    match /quota_modifiers/{modId} {
+      allow read: if authed() && (
+        resource.data.get('userId', '') == request.auth.uid
+        || pl() >= 60
+        || (pl() >= 44 && resource.data.get('divisionId', '') == divId() && divId() != '')
+      );
+      allow create, update, delete: if false;
+    }
+
+    // ── /quota_attendance/{id} — reviewers sync on log approval ──
+    match /quota_attendance/{attId} {
+      allow read: if authed() && (
+        resource.data.get('userId', '') == request.auth.uid
+        || pl() >= 60
+        || (pl() >= 42 && resource.data.get('divisionId', '') == divId() && divId() != '')
+      );
+      allow create: if authed() && pl() >= 42
+        && exists(/databases/$(database)/documents/logs/$(request.resource.data.logId))
+        && get(/databases/$(database)/documents/logs/$(request.resource.data.logId)).data.status == 'approved'
+        && request.resource.data.divisionId
+             == get(/databases/$(database)/documents/logs/$(request.resource.data.logId)).data.divisionId
+        && (pl() >= 60
+            || get(/databases/$(database)/documents/logs/$(request.resource.data.logId)).data.get('divisionId', '')
+               == divId());
+      allow delete: if authed() && pl() >= 42
+        && (pl() >= 60 || resource.data.get('divisionId', '') == divId());
+      allow update: if false;
+    }
+
+    // ── /reform_snapshots/{id} + entries ─────────────────────
+    match /reform_snapshots/{snapId} {
+      allow read: if authed() && (
+        pl() >= 60
+        || (resource.data.get('divisionId', '') == divId() && divId() != '')
+      );
+      allow create: if authed()
+        && canManageQuotaForDivision(request.resource.data.divisionId)
+        && request.resource.data.keys().hasAll([
+          'divisionId', 'weekKey', 'periodStart', 'periodEnd', 'computedAt', 'entryCount'
+        ]);
+      allow update, delete: if false;
+
+      match /entries/{entryId} {
+        allow read: if authed() && (
+          pl() >= 60
+          || (get(/databases/$(database)/documents/reform_snapshots/$(snapId)).data.get('divisionId', '') == divId()
+              && divId() != '')
+        );
+        allow create: if authed()
+          && canManageQuotaForDivision(
+            get(/databases/$(database)/documents/reform_snapshots/$(snapId)).data.divisionId
+          )
+          && request.resource.data.keys().hasAll([
+            'userId', 'requiredTotal', 'completedTotal', 'deficit', 'completionPct'
+          ]);
+        allow update, delete: if false;
+      }
+    }
+
+    // ── /quota_policies — commanders + HQ authority ───────────
+    match /quota_policies/{policyId} {
+      allow read: if authed();
+      allow create: if authed()
+        && canManageQuotaForDivision(request.resource.data.divisionId)
+        && request.resource.data.keys().hasAll(['divisionId', 'rankId', 'periodKind', 'effectiveFrom', 'rules'])
+        && request.resource.data.rules is list;
+      allow update: if authed()
+        && canManageQuotaForDivision(resource.data.divisionId)
+        && request.resource.data.divisionId == resource.data.divisionId;
+      allow delete: if authed() && canManageQuotaForDivision(resource.data.divisionId);
+    }
+
+    match /event_definitions/{defId} {
+      allow read: if authed();
+      allow create: if authed()
+        && canManageQuotaForDivision(request.resource.data.divisionId)
+        && request.resource.data.keys().hasAll(['divisionId', 'key', 'label']);
+      allow update: if authed()
+        && canManageQuotaForDivision(resource.data.divisionId)
+        && request.resource.data.divisionId == resource.data.divisionId;
+      allow delete: if authed() && canManageQuotaForDivision(resource.data.divisionId);
     }
 
     // ── Deny everything else ─────────────────────────────────

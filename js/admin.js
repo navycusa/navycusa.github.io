@@ -338,6 +338,14 @@
             proofOnDiscord: true,
           });
         }
+
+        if (window.QuotaFirestore) {
+          try {
+            await window.QuotaFirestore.syncFromApprovedLog(logId, { ...logData, status: 'approved' });
+          } catch (qe) {
+            console.error('Quota attendance sync failed:', qe);
+          }
+        }
       }
 
       await auditLog(`log.${decision}`, 'log', logId, { reviewer: u.username, note });

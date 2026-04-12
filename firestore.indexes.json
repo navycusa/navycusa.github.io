@@ -41,6 +41,81 @@
         { "fieldPath": "status",    "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "quota_attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId",     "order": "ASCENDING" },
+        { "fieldPath": "divisionId", "order": "ASCENDING" },
+        { "fieldPath": "occurredAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "quota_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requesterUid", "order": "ASCENDING" },
+        { "fieldPath": "divisionId",     "order": "ASCENDING" },
+        { "fieldPath": "status",           "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "quota_modifiers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId",     "order": "ASCENDING" },
+        { "fieldPath": "divisionId", "order": "ASCENDING" },
+        { "fieldPath": "active",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "quota_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId", "order": "ASCENDING" },
+        { "fieldPath": "status",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reform_snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId",  "order": "ASCENDING" },
+        { "fieldPath": "computedAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reform_snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId", "order": "ASCENDING" },
+        { "fieldPath": "weekKey",    "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "event_definitions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId",     "order": "ASCENDING" },
+        { "fieldPath": "matchEventType", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "event_definitions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId",      "order": "ASCENDING" },
+        { "fieldPath": "matchCustomName", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "quota_policies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId", "order": "ASCENDING" },
+        { "fieldPath": "rankId",     "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

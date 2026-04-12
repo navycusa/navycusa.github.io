@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QUOTA Management — US Navy CUSA Portal</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .quota-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 960px) { .quota-grid { grid-template-columns: 1fr; } }
+    .rule-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; white-space: pre-wrap; }
+    textarea.code { font-family: ui-monospace, monospace; font-size: 0.78rem; min-height: 140px; }
+  </style>
+</head>
+<body>
+
+<div class="app-wrapper">
+
+  <header class="site-header">
+    <a class="header-brand" href="/dashboard.html">
+      <div class="brand-icon">⚓</div>
+      <div class="brand-text">
+        <span class="brand-name">NavyCUSA</span>
+        <span class="brand-sub">Personnel Portal</span>
+      </div>
+    </a>
+    <div class="header-spacer"></div>
+    <div class="header-user">
+      <div class="header-user-info">
+        <span class="u-name" id="header-username">—</span>
+        <span class="u-rank" id="header-rank">—</span>
+      </div>
+      <div class="header-avatar" id="header-avatar">?</div>
+      <button id="logout-btn" class="btn btn-secondary btn-sm">Sign Out</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <nav class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Navigation</div>
+        <a class="sidebar-link" href="/dashboard.html"><span class="nav-icon">🏠</span> Dashboard</a>
+        <a class="sidebar-link" href="/activity.html"><span class="nav-icon">📋</span> Activity Log</a>
+        <a class="sidebar-link" href="/quota-command.html"><span class="nav-icon">📊</span> QUOTA Management</a>
+      </div>
+      <div class="sidebar-section" data-min-perm="60">
+        <div class="sidebar-label">Administration</div>
+        <a class="sidebar-link" href="/admin.html" data-min-perm="60"><span class="nav-icon">⚙️</span> Admin Panel</a>
+      </div>
+      <div class="sidebar-footer">
+        <p style="font-size:0.68rem;color:var(--text-muted);text-align:center">
+          US Navy CUSA Portal<br>Authorized Personnel Only
+        </p>
+      </div>
+    </nav>
+
+    <main class="main-content">
+
+      <div class="page-header">
+        <h1>QUOTA Management</h1>
+        <p>Divisional Command (RDML+): quotas and requests for your division.
+          <strong>Headquarters</strong> quotas are managed only by the Secretary of the Navy (or SecNav+).</p>
+      </div>
+
+      <div id="qc-access-denied" class="alert alert-danger hidden">
+        You do not have quota authority for any division. RDML+ manage their assigned division; SecNav+ manages Headquarters.
+      </div>
+
+      <div id="qc-main" class="hidden">
+        <div class="form-group mb-16" style="max-width:360px">
+          <label for="qc-division">Division</label>
+          <select id="qc-division" class="form-control"></select>
+        </div>
+
+        <div class="tab-bar">
+          <button type="button" class="tab-btn active" data-tab="qc-tab-requests">Requests</button>
+          <button type="button" class="tab-btn" data-tab="qc-tab-defs">Event definitions</button>
+          <button type="button" class="tab-btn" data-tab="qc-tab-policy">Quota policy</button>
+          <button type="button" class="tab-btn" data-tab="qc-tab-reform">Reform list</button>
+        </div>
+
+        <div class="tab-panel active" id="qc-tab-requests">
+          <div id="qc-req-alert" class="alert hidden"></div>
+          <div class="card">
+            <div class="card-header"><h3>Pending MDQRA / LOA</h3></div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Member</th><th>Type</th><th>Detail</th><th>Reason</th><th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="qc-req-body">
+                  <tr><td colspan="5" class="text-muted" style="padding:16px">Load a division…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="qc-tab-defs">
+          <div id="qc-def-alert" class="alert hidden"></div>
+          <div class="quota-grid">
+            <div class="card">
+              <div class="card-header"><h3>Add definition</h3></div>
+              <div style="padding:16px">
+                <div class="form-group">
+                  <label for="qc-def-key">Key (machine id)</label>
+                  <input type="text" id="qc-def-key" class="form-control" placeholder="e.g. training_exercise">
+                </div>
+                <div class="form-group">
+                  <label for="qc-def-label">Label</label>
+                  <input type="text" id="qc-def-label" class="form-control" placeholder="Display name">
+                </div>
+                <div class="form-group">
+                  <label for="qc-def-type">Match standard event type</label>
+                  <select id="qc-def-type" class="form-control">
+                    <option value="">— None —</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="qc-def-custom">Or match custom event name (exact)</label>
+                  <input type="text" id="qc-def-custom" class="form-control" placeholder="If using Custom Event">
+                </div>
+                <button type="button" id="qc-def-save" class="btn btn-primary">Save definition</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><h3>Existing</h3></div>
+              <div class="table-wrapper">
+                <table>
+                  <thead><tr><th>Key</th><th>Label</th><th>Match</th><th></th></tr></thead>
+                  <tbody id="qc-def-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="qc-tab-policy">
+          <div id="qc-pol-alert" class="alert hidden"></div>
+          <div class="card">
+            <div class="card-header"><h3>Publish quota policy</h3></div>
+            <div style="padding:16px">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="qc-pol-rank">Rank (main rank id)</label>
+                  <select id="qc-pol-rank" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                  <label for="qc-pol-period">Period</label>
+                  <select id="qc-pol-period" class="form-control">
+                    <option value="weekly">Weekly (ISO week, Mon–Sun)</option>
+                    <option value="monthly">Monthly (calendar)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="qc-pol-from">Effective from (YYYY-MM-DD)</label>
+                  <input type="date" id="qc-pol-from" class="form-control">
+                </div>
+                <div class="form-group">
+                  <label for="qc-pol-to">Effective to (optional)</label>
+                  <input type="date" id="qc-pol-to" class="form-control">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="qc-pol-rules">Rules (JSON array)</label>
+                <textarea id="qc-pol-rules" class="form-control code"></textarea>
+                <div class="rule-hint">Example group: {"id":"g1","ruleType":"group","label":"Pick 2","requiredCount":2,"items":[{"matchEventType":"Training Exercise"},{"matchEventType":"Patrol"}]}
+Example mandatory: {"id":"m1","ruleType":"mandatory","items":[{"matchEventType":"Inspection","minCount":3}]}
+Duty minutes (from approved duty logs): {"id":"d1","ruleType":"duty_minutes","label":"Duty","requiredMinutes":120}</div>
+              </div>
+              <button type="button" id="qc-pol-save" class="btn btn-primary">Save policy</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header"><h3>Policies for division</h3></div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>Rank</th><th>Period</th><th>From</th><th>To</th><th>Rules #</th></tr></thead>
+                <tbody id="qc-pol-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="qc-tab-reform">
+          <div id="qc-ref-alert" class="alert hidden"></div>
+          <div class="card">
+            <div class="card-header" style="flex-wrap:wrap;gap:8px">
+              <h3>Latest reform snapshot</h3>
+              <button type="button" id="qc-reform-refresh" class="btn btn-sm btn-secondary">Refresh</button>
+              <button type="button" id="qc-reform-division" class="btn btn-sm btn-primary">Compute for this division</button>
+              <button type="button" id="qc-reform-run" class="btn btn-sm btn-primary hidden" data-min-perm="90">Run assessment now</button>
+            </div>
+            <p id="qc-reform-meta" class="text-muted" style="padding:0 16px;font-size:0.85rem"></p>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Member</th><th>Rank</th><th>Deficit</th><th>Completion %</th><th>Required</th><th>Completed</th>
+                  </tr>
+                </thead>
+                <tbody id="qc-reform-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="/js/firebase-config.js"></script>
+<script src="/js/ranks.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/quota-logic.js"></script>
+<script src="/js/quota-firestore.js"></script>
+<script src="/js/quota-command.js"></script>
+</body>
+</html>

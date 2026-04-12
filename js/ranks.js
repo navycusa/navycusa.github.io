@@ -40,12 +40,16 @@ const RANKS = [
 
 // Default divisions (seeded into Firestore on first admin setup)
 const DEFAULT_DIVISIONS = [
+  { id: 'hq',    name: 'Headquarters',                     short: 'HQ',    isHeadquarters: true },
   { id: 'ncg',   name: 'Navy Ceremonial Guard',            short: 'NCG'   },
   { id: 'seals', name: 'Navy SEALs',                       short: 'SEALS' },
   { id: 'netc',  name: 'Naval Education Training Command', short: 'NETC'  },
   { id: 'ffc',   name: 'Fleet Forces Command',             short: 'FFC'   },
   { id: 'ndvl',  name: 'Navy Divisionless',                short: 'NDVL'  },
 ];
+
+/** Firestore division doc id for standalone HQ (quota authority: Secretary of the Navy). */
+const HQ_DIVISION_ID = 'hq';
 
 const EVENT_TYPES = [
   'Training Exercise',
@@ -71,6 +75,10 @@ const PERM = {
   ARCHIVE_OWN_DIVISION:  50,   // Admiral+ — archive own division only
   ARCHIVE_LOGS:          85,   // UnderSecNav+ — archive any / all divisions
   APPROVE_LOGS:          42,   // MCPO+
+  /** Rear Admiral (LH) and above — divisional quota policy & request approval */
+  QUOTA_DIV_COMMAND:     44,
+  /** Secretary of the Navy+ — sole quota authority for Headquarters division */
+  QUOTA_HQ_AUTHORITY:    90,
 };
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -84,6 +92,20 @@ function getRanksUpTo(maxPL) {
 
 function hasPerm(userPL, required) {
   return userPL >= required;
+}
+
+/** True if caller may manage quotas for a division (RDML+ own div; SecNav+ for HQ only). */
+function canManageDivisionQuota(user, divisionId, divisionIsHQ) {
+  if (!divisionId) return false;
+  if (divisionIsHQ) {
+    return user.permission_level >= PERM.QUOTA_HQ_AUTHORITY || user.rankId === 'secnav';
+  }
+  return user.permission_level >= PERM.QUOTA_DIV_COMMAND && user.divisionId === divisionId;
+}
+
+/** True if broad HQ stats/admin (CNP+), not tied to HQ quota authority. */
+function isHQPersonnel(user) {
+  return user.permission_level >= PERM.ADMIN_PANEL;
 }
 
 function catBadge(cat) {

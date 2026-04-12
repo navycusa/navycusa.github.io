@@ -131,6 +131,30 @@
 
   await applyDivisionContextForActivity();
 
+  async function resolveAttendeeUidsFromInput(raw, logDivisionId) {
+    const parts = String(raw || '')
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!parts.length) return { uids: [], unknown: [] };
+    try {
+      if (!window.QuotaFirestore) throw new Error('QuotaFirestore not loaded');
+      const res = await window.QuotaFirestore.resolveEventAttendees(logDivisionId, parts);
+      const uids = [];
+      const unknown = [];
+      (res.attendees || []).forEach((a) => {
+        if (a.uid) uids.push(a.uid);
+        else {
+          const tag = a.reason === 'wrong_division' ? `${a.username} (other division)` : a.username;
+          unknown.push(tag);
+        }
+      });
+      return { uids: [...new Set(uids)], unknown };
+    } catch (e) {
+      return { uids: [], unknown: [e.message || 'resolve failed'] };
+    }
+  }
+
   // ── Shared: build log proof object from form inputs ───────
   async function collectProof(imageInputId, discordInputId, alertId) {
     const imageFile   = document.getElementById(imageInputId).files[0];
@@ -241,6 +265,7 @@
     const date         = document.getElementById('event-date').value;
     const participants = parseInt(document.getElementById('event-participants').value, 10) || 0;
     const desc         = document.getElementById('event-desc').value.trim();
+    const attendeesRaw = document.getElementById('event-attendees').value;
 
     clearAlert('event-alert');
 
@@ -263,7 +288,7 @@
       return;
     }
 
-    btn.innerHTML = '<span class="spinner"></span> Submitting…';
+    btn.innerHTML = '<span class="spinner"></span> Resolving attendees…';
 
     const { divisionId: logDivId, divisionName: logDivName } = getActivityDivision();
     if (!logDivId || logDivId === 'ndvl') {
@@ -272,6 +297,17 @@
       btn.textContent = 'Submit Event Log';
       return;
     }
+
+    const { uids: attendeeUids, unknown: unknownAttendees } =
+      await resolveAttendeeUidsFromInput(attendeesRaw, logDivId);
+    if (unknownAttendees.length) {
+      showAlert('event-alert', 'danger', 'Unknown usernames (check spelling): ' + unknownAttendees.map(escHtml).join(', '));
+      btn.disabled = false;
+      btn.textContent = 'Submit Event Log';
+      return;
+    }
+
+    btn.innerHTML = '<span class="spinner"></span> Submitting…';
 
     try {
       const displayName = evtType === 'Custom Event' ? customName : evtType;
@@ -290,6 +326,7 @@
         eventType:       evtType,
         customEventName: evtType === 'Custom Event' ? customName : null,
         participants:    participants,
+        attendeeUids:    attendeeUids.length ? attendeeUids : null,
         description:     desc                || null,
         proofImageUrl:   proof.proofImageUrl,
         discordLink:     proof.discordLink,
@@ -314,6 +351,7 @@
 
       showAlert('event-alert', 'success', '&#10003; Event log submitted and is pending approval.');
       e.target.reset();
+      document.getElementById('event-attendees').value = '';
       document.getElementById('custom-event-row').classList.add('hidden');
       await loadMyLogs();
     } catch (err) {
