@@ -157,6 +157,17 @@
     const poGroup     = document.getElementById('um-personnel-offices-group');
     const cbOcnp      = document.getElementById('um-ocnp');
     const cbOcno      = document.getElementById('um-ocno');
+    const activeCb    = document.getElementById('um-active');
+    const toggleActiveBtn = document.getElementById('um-toggle-active');
+    const deletePermBtn   = document.getElementById('um-delete-permanent');
+
+    if (toggleActiveBtn && activeCb) {
+      toggleActiveBtn.onclick = () => { activeCb.checked = !activeCb.checked; };
+    }
+    if (deletePermBtn) {
+      deletePermBtn.classList.add('hidden');
+      deletePermBtn.onclick = null;
+    }
 
     let divisions = [];
     try {
@@ -233,13 +244,44 @@
       rankSel.value = usr.mappedRankId || usr.rankId || '';
       await refreshDivRanks(divSel.value);
       divRankSel.value = usr.divRankId || '';
-      document.getElementById('um-active').checked = usr.isActive !== false;
+      activeCb.checked = usr.isActive !== false;
       if (showPoAffil) {
         const poList = Array.isArray(usr.personnelOffices) ? usr.personnelOffices : [];
         cbOcnp.checked = poList.includes('ocnp');
         cbOcno.checked = poList.includes('ocno');
       }
       document.getElementById('user-modal-save').onclick = () => saveUser(userId, usr);
+
+      // Permanent delete (Auth + Firestore) — requires Cloud Functions.
+      if (deletePermBtn) {
+        deletePermBtn.classList.remove('hidden');
+        deletePermBtn.onclick = async () => {
+          try {
+            if (!confirm(`Remove account for ${usr.username}? This cannot be undone.`)) return;
+            const typed = prompt(`Type DELETE to remove account for ${usr.username}:`);
+            if ((typed || '').trim().toUpperCase() !== 'DELETE') return;
+
+            if (!firebase.functions || typeof firebase.functions !== 'function') {
+              throw new Error('Removing an account requires deployed Cloud Functions (functions SDK not loaded).');
+            }
+
+            deletePermBtn.disabled = true;
+            deletePermBtn.innerHTML = '<span class="spinner"></span> Removing…';
+
+            const call = firebase.functions().httpsCallable('deleteUserPermanently');
+            await call({ uid: userId });
+            await auditLog('user.delete_permanent', 'user', userId, { username: usr.username });
+            closeUserModal();
+            await loadUsers();
+            showAlert('users-alert', 'success', `User <strong>${escHtml(usr.username)}</strong> was permanently removed.`);
+          } catch (e) {
+            showAlert('user-modal-alert', 'danger', escHtml(e.message || String(e)));
+          } finally {
+            deletePermBtn.disabled = false;
+            deletePermBtn.textContent = 'Remove account permanently';
+          }
+        };
+      }
     } else {
       title.textContent = isPersonnelOfficeOnly ? 'Add Navy Divisionless Personnel' : 'Add New Personnel';
       document.getElementById('um-username').value    = '';
@@ -253,7 +295,7 @@
       rankSel.value = '';
       divRankSel.innerHTML = '<option value="">— None (use main rank) —</option>';
       document.getElementById('um-div-rank-group').classList.add('hidden');
-      document.getElementById('um-active').checked = true;
+      activeCb.checked = true;
       document.getElementById('user-modal-save').onclick = () => saveUser(null, null);
     }
     modal.classList.remove('hidden');
@@ -359,7 +401,7 @@
         await auditLog('user.create', 'user', newUid, { username, rankId, divisionId });
         if (window.DiscordWebhooks) {
           await window.DiscordWebhooks.postEmbed(db, divisionId, 'pending', {
-            title:       '👤 New portal account',
+            title:       '👤 Account Creation',
             color:       0x3498db,
             description: `**${username}** was created (temporary password on first login).`,
             fields: [
@@ -367,7 +409,7 @@
               { name: 'Division',   value: divName,        inline: true },
               { name: 'Created by', value: u.username || '—', inline: true },
             ],
-            footer:      { text: 'US Navy CUSA Portal' },
+            footer:      { text: 'US Navy CUSA Portal • created by pPayday' },
             timestamp:   new Date().toISOString(),
           });
         }

@@ -10,6 +10,19 @@
     @media (max-width: 960px) { .quota-grid { grid-template-columns: 1fr; } }
     .rule-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; white-space: pre-wrap; }
     textarea.code { font-family: ui-monospace, monospace; font-size: 0.78rem; min-height: 140px; }
+    .rule-card {
+      background: rgba(30,77,140,0.12);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      display:flex;
+      gap:10px;
+      justify-content:space-between;
+      align-items:flex-start;
+    }
+    .rule-card-title { font-weight:700; color: var(--text-primary); }
+    .rule-card-sub { font-size:0.82rem; color: var(--text-secondary); margin-top:2px; }
+    .rule-card-actions { display:flex; gap:8px; }
   </style>
   <link rel="icon" type="image/jpg" href="/assets/navy.jpg">
   <link rel="apple-touch-icon" href="/assets/navy.jpg">
@@ -20,7 +33,7 @@
 
   <header class="site-header">
     <a class="header-brand" href="/dashboard.html">
-      <div class="brand-icon">⚓</div>
+      <div class="brand-icon"><img src="/assets/navy.jpg" alt="US Navy logo"></div>
       <div class="brand-text">
         <span class="brand-name">NavyCUSA</span>
         <span class="brand-sub">Personnel Portal</span>
@@ -52,7 +65,7 @@
       </div>
       <div class="sidebar-footer">
         <p style="font-size:0.68rem;color:var(--text-muted);text-align:center">
-          US Navy CUSA Portal<br>Authorized Personnel Only
+          US Navy CUSA Portal<br>Authorized Personnel Only<br><span style="opacity:.9">created by pPayday</span>
         </p>
       </div>
     </nav>
@@ -191,11 +204,85 @@
                 </div>
               </div>
               <div class="form-group">
-                <label for="qc-pol-rules">Rules (JSON array)</label>
-                <textarea id="qc-pol-rules" class="form-control code"></textarea>
-                <div class="rule-hint">Example group: {"id":"g1","ruleType":"group","label":"Pick 2","requiredCount":2,"items":[{"matchEventType":"Training Exercise"},{"matchEventType":"Patrol"}]}
-Example mandatory: {"id":"m1","ruleType":"mandatory","items":[{"matchEventType":"Inspection","minCount":3}]}
-Duty minutes (from approved duty logs): {"id":"d1","ruleType":"duty_minutes","label":"Duty","requiredMinutes":120}</div>
+                <label>Rules</label>
+                <div class="text-muted" style="font-size:0.85rem;margin-bottom:10px">
+                  Build rules using the form below.
+                </div>
+
+                <div id="qc-pol-rules-list" style="display:flex;flex-direction:column;gap:10px"></div>
+
+                <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+                  <h4 style="margin-bottom:10px">Add rule</h4>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="qc-rule-type">Rule type</label>
+                      <select id="qc-rule-type" class="form-control">
+                        <option value="group">Group (pick from pool)</option>
+                        <option value="mandatory">Mandatory (must-do)</option>
+                        <option value="duty_minutes">Duty minutes</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label for="qc-rule-label">Label</label>
+                      <input type="text" id="qc-rule-label" class="form-control" placeholder="Short name shown to users">
+                    </div>
+                  </div>
+
+                  <div id="qc-rule-group" class="hidden">
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label for="qc-rule-required-count">Required count</label>
+                        <input type="number" id="qc-rule-required-count" class="form-control" min="1" placeholder="e.g. 2">
+                      </div>
+                      <div class="form-group">
+                        <label for="qc-rule-group-item">Pool item (standard event type)</label>
+                        <select id="qc-rule-group-item" class="form-control">
+                          <option value="">— Select —</option>
+                        </select>
+                        <div class="form-text">Use Event definitions if you need custom-name matching; this is the simple pool.</div>
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                      <button type="button" class="btn btn-sm btn-secondary" id="qc-rule-group-add">+ Add to pool</button>
+                      <span id="qc-rule-group-items" class="text-muted" style="font-size:0.85rem"></span>
+                    </div>
+                  </div>
+
+                  <div id="qc-rule-mandatory" class="hidden">
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label for="qc-rule-mandatory-type">Mandatory event type</label>
+                        <select id="qc-rule-mandatory-type" class="form-control">
+                          <option value="">— Select —</option>
+                        </select>
+                      </div>
+                      <div class="form-group">
+                        <label for="qc-rule-mandatory-min">Minimum count</label>
+                        <input type="number" id="qc-rule-mandatory-min" class="form-control" min="1" placeholder="e.g. 1">
+                      </div>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                      <button type="button" class="btn btn-sm btn-secondary" id="qc-rule-mandatory-add">+ Add requirement</button>
+                      <span id="qc-rule-mandatory-items" class="text-muted" style="font-size:0.85rem"></span>
+                    </div>
+                  </div>
+
+                  <div id="qc-rule-duty" class="hidden">
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label for="qc-rule-minutes">Required minutes</label>
+                        <input type="number" id="qc-rule-minutes" class="form-control" min="1" placeholder="e.g. 120">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="button" class="btn btn-sm btn-primary" id="qc-rule-add">Add rule</button>
+                    <button type="button" class="btn btn-sm btn-secondary" id="qc-rule-clear">Clear draft</button>
+                  </div>
+                </div>
+
+                <textarea id="qc-pol-rules" class="form-control code hidden"></textarea>
               </div>
               <button type="button" id="qc-pol-save" class="btn btn-primary">Save policy</button>
             </div>

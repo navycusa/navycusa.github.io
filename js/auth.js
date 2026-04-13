@@ -58,6 +58,13 @@ function requireAuth(options = {}) {
         return;
       }
 
+      // Activation gate (stored in Firestore)
+      if (userData.isActive === false) {
+        try { await auth.signOut(); } catch (_) {}
+        window.location.href = '/index.html?disabled=1';
+        return;
+      }
+
       // Permission gate
       if (options.adminPanelAccess) {
         if (typeof canAccessAdminPanel === 'function' && !canAccessAdminPanel(userData)) {

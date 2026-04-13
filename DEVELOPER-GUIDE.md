@@ -46,6 +46,11 @@ Comments in `js/firebase-config.js` state that **quota and reform work on the Sp
 | `functions/quotaLogic.js` | Server-side mirror of client quota math. |
 | `schema/quota_reference.sql` | **Documentation only** — relational sketch of quota concepts; production is Firestore. |
 
+Background imagery is configured via CSS only:
+
+- Default is `assets/navybackground.jpg` using `--app-bg-image` in `css/main.css`
+- Override per page by setting `:root { --app-bg-image: url('/assets/your-image.jpg'); }` in a page `<style>` block (keep it subtle; the CSS applies blur + overlay)
+
 ---
 
 ## 3. Authentication model
@@ -231,7 +236,7 @@ Shown if user has `divisionId` and not `ndvl`: loads `fetchNetStatus`, renders s
 
 - Gate: `requireAuth({ minPermission: PERM.QUOTA_DIV_COMMAND })` then **additional** filter: user must manage **at least one** division per `canManageDivisionQuota` (HQ vs SecNav vs RDML own division, etc.).
 - **Global pending table** (CNP–Under SecNav): all non-HQ divisions’ pending requests; approve/reject only if `canManageDivisionQuota` for that row’s division.
-- Tabs: Requests, Event definitions, Quota policy (JSON rules), Reform list (compute division / SecNav+ all divisions).
+- Tabs: Requests, Event definitions, Quota policy (rule builder; saves rules array), Reform list (compute division / SecNav+ all divisions).
 
 ---
 
@@ -239,7 +244,14 @@ Shown if user has `divisionId` and not `ndvl`: loads `fetchNetStatus`, renders s
 
 Reads division document, chooses `webhookUrlPending` or `webhookUrlApproved`, falling back to legacy `webhookUrl`. Posts JSON `{ embeds: [...] }` via `fetch`. Failures are logged but non-fatal.
 
-Embed builders cover: pending/approved/rejected logs, quota request pending/decided, and admin uses a custom embed for new accounts.
+Embed builders cover: pending/approved/rejected logs, quota request pending/decided, and admin uses a custom embed for **Account Creation**.
+
+Quota request naming is intentional and should stay user-facing:
+
+- **LOA Request** (`requestType: 'LOA'`)
+- **Quota Reduction Request** (`requestType: 'MDQRA'`)
+
+Embed footers include the attribution text: **created by pPayday**.
 
 ---
 
@@ -274,6 +286,7 @@ After changing rules or queries, deploy rules and ensure **`firestore.indexes.js
 Includes (non-exhaustive; read file for full list):
 
 - **`createUser`** — server-side user creation with validation.
+- **`deleteUserPermanently`** — permanently deletes a Firebase Auth user and `users/{uid}` profile (admin-only).
 - **Firestore triggers** — e.g. `onLogCreated` for audit, possible quota automation.
 - Quota-related callables/triggers may sync attendance or modifiers when Functions are deployed.
 

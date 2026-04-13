@@ -6,12 +6,41 @@
 (function (global) {
   'use strict';
 
+  const DEFAULT_FOOTER_TEXT = 'US Navy CUSA Portal • created by pPayday';
+
+  function defaultFooter() {
+    return { text: DEFAULT_FOOTER_TEXT };
+  }
+
   function divisionDiscordUrls(divData) {
     if (!divData) return { pending: null, approved: null };
     const legacy = divData.webhookUrl || null;
     return {
       pending:  divData.webhookUrlPending || legacy || null,
       approved: divData.webhookUrlApproved || legacy || null,
+    };
+  }
+
+  function quotaRequestDisplay(requestType) {
+    const t = String(requestType || '').toUpperCase();
+    if (t === 'LOA') {
+      return {
+        kindLabel: 'LOA Request',
+        pendingTitle: '📥 LOA Request — pending approval',
+        detailLabel: 'LOA window',
+      };
+    }
+    if (t === 'MDQRA') {
+      return {
+        kindLabel: 'Quota Reduction Request',
+        pendingTitle: '📥 Quota Reduction Request — pending approval',
+        detailLabel: 'Reduction',
+      };
+    }
+    return {
+      kindLabel: 'Quota Request',
+      pendingTitle: '📥 Quota Request — pending approval',
+      detailLabel: 'Details',
     };
   }
 
@@ -36,7 +65,7 @@
         { name: 'Rank',      value: String(log.authorRankName || '—'), inline: true },
         { name: 'Division',  value: String(log.divisionName  || '—'), inline: true },
       ],
-      footer: { text: 'US Navy CUSA Portal' },
+      footer: defaultFooter(),
       timestamp: new Date().toISOString(),
     };
     if (isEvent) {
@@ -68,7 +97,7 @@
           : `${detail || '—'} on ${dateStr}`,
         inline: false },
       ],
-      footer:    { text: 'US Navy CUSA Portal' },
+      footer:    defaultFooter(),
       timestamp: new Date().toISOString(),
     };
     if (log.discordLink) {
@@ -90,7 +119,7 @@
         { name: 'Division',  value: String(log.divisionName  || '—'), inline: true },
         { name: 'Reviewer',  value: String(log.reviewerUsername || '—'), inline: true },
       ],
-      footer:    { text: 'US Navy CUSA Portal' },
+      footer:    defaultFooter(),
       timestamp: new Date().toISOString(),
     };
     if (reviewNotes) embed.fields.push({ name: 'Reason', value: String(reviewNotes).slice(0, 1024), inline: false });
@@ -99,24 +128,25 @@
 
   function buildQuotaRequestPendingEmbed(req, divisionName) {
     const div = divisionName || req.divisionId || '—';
+    const disp = quotaRequestDisplay(req.requestType);
     const fields = [
       { name: 'Requester', value: String(req.requesterUsername || '—'), inline: true },
       { name: 'Division',  value: String(div),                           inline: true },
-      { name: 'Type',      value: String(req.requestType || '—'),        inline: true },
+      { name: 'Type',      value: disp.kindLabel,                        inline: true },
     ];
     if (req.requestType === 'MDQRA') {
-      fields.push({ name: 'Reduction', value: `${req.reductionPercent}%`, inline: true });
+      fields.push({ name: disp.detailLabel, value: `${req.reductionPercent}%`, inline: true });
     }
     if (req.requestType === 'LOA') {
-      fields.push({ name: 'LOA window', value: `${req.loaStart || '—'} → ${req.loaEnd || '—'}`, inline: false });
+      fields.push({ name: disp.detailLabel, value: `${req.loaStart || '—'} → ${req.loaEnd || '—'}`, inline: false });
     }
     if (req.reason) fields.push({ name: 'Reason', value: String(req.reason).slice(0, 1024), inline: false });
     return {
-      title:       '📥 Quota request — pending approval',
+      title:       disp.pendingTitle,
       color:       0xf39c12,
-      description: `**${req.requestType === 'LOA' ? 'Leave of absence' : 'MDQRA / quota reduction'}** request submitted.`,
+      description: `A new **${disp.kindLabel}** was submitted and is **pending approval**.`,
       fields,
-      footer:      { text: 'US Navy CUSA Portal' },
+      footer:      defaultFooter(),
       timestamp:   new Date().toISOString(),
     };
   }
@@ -124,23 +154,24 @@
   function buildQuotaRequestDecidedEmbed(req, divisionName, approved, decisionNotes, decider) {
     const div = divisionName || req.divisionId || '—';
     const ok = approved;
+    const disp = quotaRequestDisplay(req.requestType);
     const fields = [
       { name: 'Requester', value: String(req.requesterUsername || '—'), inline: true },
       { name: 'Division',  value: String(div),                           inline: true },
-      { name: 'Type',      value: String(req.requestType || '—'),        inline: true },
+      { name: 'Type',      value: disp.kindLabel,                        inline: true },
     ];
-    if (req.requestType === 'MDQRA') fields.push({ name: 'Reduction', value: `${req.reductionPercent}%`, inline: true });
+    if (req.requestType === 'MDQRA') fields.push({ name: disp.detailLabel, value: `${req.reductionPercent}%`, inline: true });
     if (req.requestType === 'LOA') {
-      fields.push({ name: 'LOA window', value: `${req.loaStart || '—'} → ${req.loaEnd || '—'}`, inline: false });
+      fields.push({ name: disp.detailLabel, value: `${req.loaStart || '—'} → ${req.loaEnd || '—'}`, inline: false });
     }
     fields.push({ name: 'Decided by', value: String(decider || '—'), inline: true });
     if (decisionNotes) fields.push({ name: 'Notes', value: String(decisionNotes).slice(0, 1024), inline: false });
     return {
-      title:       ok ? '✅ Quota request approved' : '❌ Quota request rejected',
+      title:       ok ? `✅ ${disp.kindLabel} approved` : `❌ ${disp.kindLabel} rejected`,
       color:       ok ? 0x2ecc71 : 0xe74c3c,
       description: ok ? 'The request was **approved** and applied.' : 'The request was **rejected**.',
       fields,
-      footer:      { text: 'US Navy CUSA Portal' },
+      footer:      defaultFooter(),
       timestamp:   new Date().toISOString(),
     };
   }
@@ -160,7 +191,7 @@
       const payload = {
         embeds: [{
           ...embed,
-          footer: embed.footer || { text: 'US Navy CUSA Portal' },
+          footer: embed.footer || defaultFooter(),
           timestamp: embed.timestamp || new Date().toISOString(),
         }],
       };
@@ -177,6 +208,7 @@
   global.DiscordWebhooks = {
     divisionDiscordUrls,
     postEmbed,
+    quotaRequestDisplay,
     buildLogPendingEmbed,
     buildLogApprovedEmbed,
     buildLogRejectedEmbed,

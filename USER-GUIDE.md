@@ -24,6 +24,7 @@ This guide explains **how to use the website** step by step. It is written for p
 - **Approved:** Accepted; it counts toward stats and (for events/duty) may count toward **quota** rules if your division uses them.
 - **Division:** Your primary command group in the portal (for example a specific unit). **Navy Divisionless (NDVL)** means you are not assigned to a primary division in the system.
 - **HQ / Headquarters:** A special division tier in the system; some features and quota rules work differently for HQ.
+  - **Rank note:** In this portal’s rank list, the lowest HQ rank label is **MCPO**. Some HQ-wide admin features still require **CNP+** access in the software.
 
 ### The address (URL)
 
@@ -289,6 +290,10 @@ New accounts usually get password **`Username1234`** and must change password on
 
 **OCNP/OCNO-only mode:** you may only work with **Navy Divisionless** accounts; division is fixed to NDVL.
 
+**Account Active:** if unchecked, the user cannot sign in (this is stored in the portal database).
+
+**Remove account permanently:** admins may also have a button to permanently remove an account (removes the Firebase Auth account and the Firestore user profile). This is irreversible and typically requires the command’s Cloud Functions to be deployed.
+
 ---
 
 ### G2 — Log Review tab
@@ -381,7 +386,10 @@ so quota rules can match hosted events reliably. **Save definition** adds it; **
 ### Tab: Quota policy
 
 - Choose **rank** (main rank id), **period** (weekly or monthly), **effective from** (and optional **to**).
-- **Rules:** JSON array describing `group`, `mandatory`, and `duty_minutes` rules. The page shows **examples** in the hint text. Invalid JSON shows an error.
+- **Rules:** use the **rule builder** (no JSON). Add one or more rules such as:
+  - **Group (pick from pool):** “Complete 2 from: Training Exercise, Patrol”
+  - **Mandatory (must-do):** “Inspection ×3”
+  - **Duty minutes:** “120 duty minutes”
 - **Save policy** stores it. The table below lists existing policies for the division.
 
 ### Tab: Reform list
@@ -445,7 +453,7 @@ When approved, future quota calculations may treat you as **exempt** for overlap
 | Reviewer (MCPO+) | Parts C–E, G2, J–K |
 | Division admin / Admiral+ | Parts G3–G5, H as applicable |
 | CNP / HQ staff | Division picker, all-division review, stats, H |
-| Quota authority (RDML+ / SecNav) | Part H, policy JSON, reform |
+| Quota authority (RDML+ / SecNav) | Part H, policy builder, reform |
 | OCNP/OCNO staff | Part G1 (NDVL only) |
 
 ---

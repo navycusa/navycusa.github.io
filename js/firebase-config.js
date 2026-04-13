@@ -20,6 +20,7 @@ firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
 const db   = firebase.firestore();
+const functions = typeof firebase.functions === 'function' ? firebase.functions() : null;
 
 // QUOTA / reform use Firestore + client JS (works on Spark — no Cloud Functions).
 // Optional: upgrade to Blaze and deploy functions/ for server-side automation.

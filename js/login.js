@@ -11,11 +11,25 @@
   const submitBtn  = document.getElementById('login-btn');
   const alertBox   = document.getElementById('login-alert');
 
+  // Support redirects for inactive accounts
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('disabled') === '1') {
+      alertBox.className = 'alert alert-danger';
+      alertBox.innerHTML = '&#9888; ' + escHtml('This account is inactive. Contact your chain of command.');
+      alertBox.classList.remove('hidden');
+    }
+  } catch (_) {}
+
   // If already authenticated, redirect immediately
   auth.onAuthStateChanged(async (user) => {
     if (!user) return;
     try {
       const snap = await db.collection('users').doc(user.uid).get();
+      if (snap.exists && snap.data().isActive === false) {
+        await auth.signOut();
+        return;
+      }
       if (snap.exists && snap.data().mustChangePassword) {
         window.location.href = '/change-password.html';
       } else if (snap.exists) {

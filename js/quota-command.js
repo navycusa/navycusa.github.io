@@ -90,24 +90,187 @@
     rankSel.appendChild(opt);
   });
 
-  document.getElementById('qc-pol-rules').value = JSON.stringify([
-    {
-      id: 'example_group',
-      ruleType: 'group',
-      label: 'Complete 2 from pool',
-      requiredCount: 2,
-      items: [
-        { matchEventType: 'Training Exercise' },
-        { matchEventType: 'Patrol' },
-      ],
-    },
-    {
-      id: 'example_duty',
-      ruleType: 'duty_minutes',
-      label: 'Duty minutes (approved activity logs)',
-      requiredMinutes: 120,
-    },
-  ], null, 2);
+  // ── Quota policy rule builder (friendly UI; saves same JSON shape) ──
+  const hiddenRulesJson = document.getElementById('qc-pol-rules');
+  const rulesListEl = document.getElementById('qc-pol-rules-list');
+  const ruleTypeEl = document.getElementById('qc-rule-type');
+  const ruleLabelEl = document.getElementById('qc-rule-label');
+
+  const groupSection = document.getElementById('qc-rule-group');
+  const groupReqCountEl = document.getElementById('qc-rule-required-count');
+  const groupItemSel = document.getElementById('qc-rule-group-item');
+  const groupAddBtn = document.getElementById('qc-rule-group-add');
+  const groupItemsEl = document.getElementById('qc-rule-group-items');
+
+  const mandatorySection = document.getElementById('qc-rule-mandatory');
+  const mandatoryTypeSel = document.getElementById('qc-rule-mandatory-type');
+  const mandatoryMinEl = document.getElementById('qc-rule-mandatory-min');
+  const mandatoryAddBtn = document.getElementById('qc-rule-mandatory-add');
+  const mandatoryItemsEl = document.getElementById('qc-rule-mandatory-items');
+
+  const dutySection = document.getElementById('qc-rule-duty');
+  const dutyMinutesEl = document.getElementById('qc-rule-minutes');
+
+  const addRuleBtn = document.getElementById('qc-rule-add');
+  const clearDraftBtn = document.getElementById('qc-rule-clear');
+
+  const EVENT_TYPES_SIMPLE = EVENT_TYPES.filter((t) => t !== 'Custom Event');
+  function fillEventTypeSelect(sel) {
+    if (!sel) return;
+    sel.innerHTML = '<option value="">— Select —</option>' + EVENT_TYPES_SIMPLE
+      .map((t) => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
+  }
+  fillEventTypeSelect(groupItemSel);
+  fillEventTypeSelect(mandatoryTypeSel);
+
+  let draftRules = [];
+  let groupPool = [];
+  let mandatoryReqs = [];
+
+  function newRuleId() {
+    return 'r_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function ruleSummary(r) {
+    if (!r) return '—';
+    if (r.ruleType === 'duty_minutes') {
+      return `${r.requiredMinutes || 0} duty minutes`;
+    }
+    if (r.ruleType === 'group') {
+      const items = Array.isArray(r.items) ? r.items.map((x) => x.matchEventType).filter(Boolean) : [];
+      return `Complete ${r.requiredCount || 0} from: ${items.join(', ') || '—'}`;
+    }
+    if (r.ruleType === 'mandatory') {
+      const items = Array.isArray(r.items) ? r.items : [];
+      const s = items.map((x) => `${x.matchEventType || '—'} ×${x.minCount || 1}`).join(', ');
+      return `Mandatory: ${s || '—'}`;
+    }
+    return r.ruleType;
+  }
+
+  function syncHiddenJson() {
+    if (hiddenRulesJson) hiddenRulesJson.value = JSON.stringify(draftRules, null, 2);
+  }
+
+  function renderDraftRules() {
+    if (!rulesListEl) return;
+    if (!draftRules.length) {
+      rulesListEl.innerHTML = '<div class="text-muted" style="font-size:0.85rem">No rules added yet.</div>';
+      syncHiddenJson();
+      return;
+    }
+    rulesListEl.innerHTML = draftRules.map((r, idx) => {
+      const title = escHtml(r.label || (r.ruleType || 'Rule'));
+      const sub = escHtml(ruleSummary(r));
+      return `<div class="rule-card">
+        <div>
+          <div class="rule-card-title">${title}</div>
+          <div class="rule-card-sub">${sub}</div>
+        </div>
+        <div class="rule-card-actions">
+          <button type="button" class="btn btn-sm btn-danger qc-rule-remove" data-idx="${idx}">Remove</button>
+        </div>
+      </div>`;
+    }).join('');
+    rulesListEl.querySelectorAll('.qc-rule-remove').forEach((b) => {
+      b.addEventListener('click', () => {
+        const i = Number(b.dataset.idx);
+        if (!Number.isFinite(i)) return;
+        draftRules.splice(i, 1);
+        renderDraftRules();
+      });
+    });
+    syncHiddenJson();
+  }
+
+  function setTypeUi(t) {
+    const type = t || (ruleTypeEl ? ruleTypeEl.value : 'group');
+    if (groupSection) groupSection.classList.toggle('hidden', type !== 'group');
+    if (mandatorySection) mandatorySection.classList.toggle('hidden', type !== 'mandatory');
+    if (dutySection) dutySection.classList.toggle('hidden', type !== 'duty_minutes');
+  }
+  if (ruleTypeEl) ruleTypeEl.addEventListener('change', () => setTypeUi(ruleTypeEl.value));
+
+  if (groupAddBtn) {
+    groupAddBtn.addEventListener('click', () => {
+      const t = groupItemSel ? groupItemSel.value : '';
+      if (!t) return;
+      if (!groupPool.includes(t)) groupPool.push(t);
+      if (groupItemsEl) groupItemsEl.textContent = groupPool.join(', ');
+    });
+  }
+  if (mandatoryAddBtn) {
+    mandatoryAddBtn.addEventListener('click', () => {
+      const t = mandatoryTypeSel ? mandatoryTypeSel.value : '';
+      const n = Number(mandatoryMinEl ? mandatoryMinEl.value : 0);
+      if (!t || !(n > 0)) return;
+      mandatoryReqs.push({ matchEventType: t, minCount: n });
+      if (mandatoryItemsEl) {
+        mandatoryItemsEl.textContent = mandatoryReqs.map((x) => `${x.matchEventType} ×${x.minCount}`).join(', ');
+      }
+    });
+  }
+
+  function clearDraftInputs() {
+    if (ruleLabelEl) ruleLabelEl.value = '';
+    if (groupReqCountEl) groupReqCountEl.value = '';
+    if (groupItemSel) groupItemSel.value = '';
+    if (groupItemsEl) groupItemsEl.textContent = '';
+    if (mandatoryTypeSel) mandatoryTypeSel.value = '';
+    if (mandatoryMinEl) mandatoryMinEl.value = '';
+    if (mandatoryItemsEl) mandatoryItemsEl.textContent = '';
+    if (dutyMinutesEl) dutyMinutesEl.value = '';
+    groupPool = [];
+    mandatoryReqs = [];
+  }
+
+  if (addRuleBtn) {
+    addRuleBtn.addEventListener('click', () => {
+      clearAlert('qc-pol-alert');
+      const type = ruleTypeEl ? ruleTypeEl.value : 'group';
+      const label = (ruleLabelEl ? ruleLabelEl.value : '').trim();
+      const id = newRuleId();
+
+      if (type === 'duty_minutes') {
+        const mins = Number(dutyMinutesEl ? dutyMinutesEl.value : 0);
+        if (!(mins > 0)) { showAlert('qc-pol-alert', 'danger', 'Duty minutes rule requires a positive minute value.'); return; }
+        draftRules.push({ id, ruleType: 'duty_minutes', label: label || 'Duty minutes', requiredMinutes: mins });
+      } else if (type === 'group') {
+        const req = Number(groupReqCountEl ? groupReqCountEl.value : 0);
+        if (!(req > 0)) { showAlert('qc-pol-alert', 'danger', 'Group rule requires a positive required count.'); return; }
+        if (!groupPool.length) { showAlert('qc-pol-alert', 'danger', 'Group rule requires at least one pool item.'); return; }
+        draftRules.push({
+          id,
+          ruleType: 'group',
+          label: label || 'Group rule',
+          requiredCount: req,
+          items: groupPool.map((t) => ({ matchEventType: t })),
+        });
+      } else if (type === 'mandatory') {
+        if (!mandatoryReqs.length) { showAlert('qc-pol-alert', 'danger', 'Mandatory rule requires at least one requirement.'); return; }
+        draftRules.push({
+          id,
+          ruleType: 'mandatory',
+          label: label || 'Mandatory rule',
+          items: mandatoryReqs.map((x) => ({ matchEventType: x.matchEventType, minCount: x.minCount })),
+        });
+      }
+
+      clearDraftInputs();
+      renderDraftRules();
+    });
+  }
+
+  if (clearDraftBtn) {
+    clearDraftBtn.addEventListener('click', () => {
+      clearDraftInputs();
+      draftRules = [];
+      renderDraftRules();
+    });
+  }
+
+  setTypeUi(ruleTypeEl ? ruleTypeEl.value : 'group');
+  renderDraftRules();
 
   divSel.addEventListener('change', async () => {
     currentDivisionId = divSel.value;
@@ -332,12 +495,9 @@
 
   document.getElementById('qc-pol-save').addEventListener('click', async () => {
     clearAlert('qc-pol-alert');
-    let rules;
-    try {
-      rules = JSON.parse(document.getElementById('qc-pol-rules').value || '[]');
-      if (!Array.isArray(rules)) throw new Error('Rules must be a JSON array.');
-    } catch (e) {
-      showAlert('qc-pol-alert', 'danger', 'Invalid rules JSON: ' + escHtml(e.message));
+    const rules = Array.isArray(draftRules) ? draftRules.slice() : [];
+    if (!rules.length) {
+      showAlert('qc-pol-alert', 'danger', 'Add at least one rule before saving.');
       return;
     }
     const rankId = document.getElementById('qc-pol-rank').value;
@@ -349,6 +509,9 @@
       return;
     }
     try {
+      // Keep JSON in hidden textarea for debugging/visibility (not user-edited).
+      const txt = document.getElementById('qc-pol-rules');
+      if (txt) txt.value = JSON.stringify(rules, null, 2);
       await QF.saveQuotaPolicy(u.uid, currentDivisionId, {
         divisionId: currentDivisionId,
         rankId,

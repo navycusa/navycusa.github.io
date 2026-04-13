@@ -123,6 +123,58 @@ exports.createUser = functions.https.onCall(async (data, context) => {
 });
 
 // ============================================================
+// deleteUserPermanently
+// Called by: Admin Panel (CNP+)
+// Deletes Firebase Auth user + Firestore /users/{uid} document.
+// ============================================================
+exports.deleteUserPermanently = functions.https.onCall(async (data, context) => {
+  const caller = await getCallerDoc(context);
+
+  if (caller.permission_level < PERM_ADMIN_PANEL) {
+    throw new functions.https.HttpsError('permission-denied', 'Insufficient rank.');
+  }
+
+  const uid = data && data.uid ? String(data.uid) : '';
+  if (!uid) throw new functions.https.HttpsError('invalid-argument', 'uid is required.');
+  if (uid === caller.uid) {
+    throw new functions.https.HttpsError('failed-precondition', 'You cannot permanently delete your own account.');
+  }
+
+  let target = null;
+  try {
+    const snap = await db.collection('users').doc(uid).get();
+    if (snap.exists) target = snap.data();
+  } catch (_) {}
+
+  if (target && typeof target.permission_level === 'number') {
+    if (!(caller.permission_level > target.permission_level)) {
+      throw new functions.https.HttpsError('permission-denied', 'You must outrank the target user.');
+    }
+  }
+
+  // Auth delete (even if Firestore doc is missing)
+  try {
+    await auth.deleteUser(uid);
+  } catch (e) {
+    if (e && e.code !== 'auth/user-not-found') {
+      throw new functions.https.HttpsError('internal', e.message || 'Auth delete failed.');
+    }
+  }
+
+  // Firestore delete
+  try {
+    await db.collection('users').doc(uid).delete();
+  } catch (_) {}
+
+  await writeAudit('user.delete_permanent', 'user', uid, caller, {
+    username: target && target.username ? target.username : null,
+    divisionId: target && target.divisionId ? target.divisionId : null,
+  });
+
+  return { ok: true };
+});
+
+// ============================================================
 // Firestore Triggers — Audit Log (immutable server-side record)
 // ============================================================
 
