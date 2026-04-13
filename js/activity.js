@@ -329,7 +329,7 @@
         eventType:       evtType,
         customEventName: evtType === 'Custom Event' ? customName : null,
         participants:    participants,
-        attendeeUids:    attendeeUids.length ? attendeeUids : null,
+        ...(attendeeUids.length ? { attendeeUids } : {}),
         description:     desc                || null,
         proofImageUrl:   proof.proofImageUrl,
         discordLink:     proof.discordLink,
