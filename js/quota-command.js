@@ -368,20 +368,56 @@
     await refreshGlobalPending();
   }
 
-  function isoTodayUtc() {
+  function todayYmdLocal() {
     const d = new Date();
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 
-  function dateInRangeYMD(todayUtc, startYmd, endYmd) {
-    const Quota = window.QuotaLogic;
-    if (!Quota) return false;
-    const s = Quota.parseYMD(startYmd);
-    if (!s) return false;
-    let e = endYmd ? Quota.parseYMD(endYmd) : new Date(8640000000000000);
-    if (!e) e = new Date(8640000000000000);
-    e.setUTCHours(23, 59, 59, 999);
-    return todayUtc.getTime() >= s.getTime() && todayUtc.getTime() <= e.getTime();
+  function toYmdAny(v) {
+    if (!v) return null;
+    if (typeof v === 'string') {
+      const s = v.trim();
+      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+    }
+    // Firestore Timestamp
+    if (v && typeof v.toDate === 'function') {
+      const d = v.toDate();
+      if (Number.isNaN(d.getTime())) return null;
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+    // JS Date
+    if (v instanceof Date) {
+      if (Number.isNaN(v.getTime())) return null;
+      const y = v.getFullYear();
+      const m = String(v.getMonth() + 1).padStart(2, '0');
+      const day = String(v.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+    return null;
+  }
+
+  // Compare YYYY-MM-DD as calendar dates (timezone-safe).
+  function dateInRangeYMD(todayYmd, startYmd, endYmd) {
+    if (!todayYmd || typeof todayYmd !== 'string') return false;
+    if (!startYmd || typeof startYmd !== 'string') return false;
+    const end = (endYmd && typeof endYmd === 'string') ? endYmd : '9999-12-31';
+    return startYmd <= todayYmd && todayYmd <= end;
+  }
+
+  function rangeStatus(todayYmd, startAny, endAny) {
+    const s = toYmdAny(startAny);
+    const e = toYmdAny(endAny);
+    if (!s) return { status: 'Unknown', start: startAny || '—', end: endAny || '—' };
+    const end = e || '9999-12-31';
+    if (todayYmd < s) return { status: 'Future', start: s, end: e || '—' };
+    if (todayYmd > end) return { status: 'Expired', start: s, end: e || '—' };
+    return { status: 'Active', start: s, end: e || '—' };
   }
 
   function fmtTs(ts) {
@@ -401,12 +437,14 @@
     const mdqraBody = document.getElementById('qc-relief-mdqra-body');
     if (!loaBody || !mdqraBody) return;
     if (!currentDivisionId) {
-      loaBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Load a division…</td></tr>';
-      mdqraBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Load a division…</td></tr>';
+      loaBody.innerHTML = '<tr><td colspan="7" class="text-muted" style="padding:16px">Load a division…</td></tr>';
+      mdqraBody.innerHTML = '<tr><td colspan="7" class="text-muted" style="padding:16px">Load a division…</td></tr>';
       return;
     }
 
-    const today = isoTodayUtc();
+    const todayYmd = todayYmdLocal();
+    const todayLocalMidnight = new Date();
+    todayLocalMidnight.setHours(0, 0, 0, 0);
     try {
       const [approvedReqs, activeMods] = await Promise.all([
         QF.listApprovedQuotaRequestsForDivision(currentDivisionId),
@@ -416,73 +454,73 @@
       const loaRows = [];
       const mdqraRows = [];
 
-      // Modifiers are the canonical "active relief" because quota math checks them.
+      // Show ALL relief rows; compute status (Active/Future/Expired).
       (activeMods || []).forEach((m) => {
         if (m.type === 'LOA') {
-          if (dateInRangeYMD(today, m.startDate, m.endDate)) {
-            loaRows.push({
-              id: m.id,
-              source: m.sourceRequestId ? 'modifier (from request)' : 'modifier',
-              member: m.userId || '—',
-              start: m.startDate || '—',
-              end: m.endDate || '—',
-              notes: m.sourceRequestId ? `request ${m.sourceRequestId}` : '—',
-              kind: 'modifier',
-              type: 'LOA',
-              userId: m.userId || null,
-            });
-          }
+          const st = rangeStatus(todayYmd, m.startDate, m.endDate);
+          loaRows.push({
+            id: m.id,
+            source: m.sourceRequestId ? 'modifier (from request)' : 'modifier',
+            member: m.userId || '—',
+            start: st.start || '—',
+            end: st.end || '—',
+            status: st.status,
+            notes: m.sourceRequestId ? `request ${m.sourceRequestId}` : '—',
+            kind: 'modifier',
+            type: 'LOA',
+            userId: m.userId || null,
+          });
         } else if (m.type === 'MDQRA') {
-          if (dateInRangeYMD(today, m.startDate, m.endDate)) {
-            mdqraRows.push({
-              id: m.id,
-              source: m.sourceRequestId ? 'modifier (from request)' : 'modifier',
-              member: m.userId || '—',
-              percent: Number(m.reductionPercent) || 0,
-              effective: `${m.startDate || '—'} → ${m.endDate || '—'}`,
-              notes: m.sourceRequestId ? `request ${m.sourceRequestId}` : '—',
-              kind: 'modifier',
-              type: 'MDQRA',
-              userId: m.userId || null,
-            });
-          }
+          const st = rangeStatus(todayYmd, m.startDate, m.endDate);
+          mdqraRows.push({
+            id: m.id,
+            source: m.sourceRequestId ? 'modifier (from request)' : 'modifier',
+            member: m.userId || '—',
+            percent: Number(m.reductionPercent) || 0,
+            effective: `${st.start || '—'} → ${st.end || '—'}`,
+            status: st.status,
+            notes: m.sourceRequestId ? `request ${m.sourceRequestId}` : '—',
+            kind: 'modifier',
+            type: 'MDQRA',
+            userId: m.userId || null,
+          });
         }
       });
 
-      // Also include approved requests that are currently effective (in case modifiers were never created / legacy).
+      // Also include approved requests (in case modifiers were never created / legacy).
       (approvedReqs || []).forEach((r) => {
         if (r.requestType === 'LOA') {
-          if (dateInRangeYMD(today, r.loaStart, r.loaEnd)) {
-            loaRows.push({
-              id: r.id,
-              source: 'request (approved)',
-              member: r.requesterUsername || r.requesterUid || '—',
-              start: r.loaStart || '—',
-              end: r.loaEnd || '—',
-              notes: r.reason || '—',
-              kind: 'request',
-              type: 'LOA',
-              userId: r.requesterUid || null,
-            });
-          }
+          const st = rangeStatus(todayYmd, r.loaStart, r.loaEnd);
+          loaRows.push({
+            id: r.id,
+            source: 'request (approved)',
+            member: r.requesterUsername || r.requesterUid || '—',
+            start: st.start || '—',
+            end: st.end || '—',
+            status: st.status,
+            notes: r.reason || '—',
+            kind: 'request',
+            type: 'LOA',
+            userId: r.requesterUid || null,
+          });
         } else if (r.requestType === 'MDQRA') {
           const decided = r.decidedAt ? (r.decidedAt.toDate ? r.decidedAt.toDate() : new Date(r.decidedAt)) : null;
-          const eff = decided && !Number.isNaN(decided.getTime())
-            ? new Date(Date.UTC(decided.getUTCFullYear(), decided.getUTCMonth(), decided.getUTCDate()))
-            : today;
-          if (today.getTime() >= eff.getTime()) {
-            mdqraRows.push({
-              id: r.id,
-              source: 'request (approved)',
-              member: r.requesterUsername || r.requesterUid || '—',
-              percent: Number(r.reductionPercent) || 0,
-              effective: fmtTs(r.decidedAt),
-              notes: r.reason || '—',
-              kind: 'request',
-              type: 'MDQRA',
-              userId: r.requesterUid || null,
-            });
-          }
+          const eff = decided && !Number.isNaN(decided.getTime()) ? new Date(decided) : new Date(todayLocalMidnight);
+          eff.setHours(0, 0, 0, 0);
+          const effYmd = toYmdAny(eff) || fmtTs(r.decidedAt);
+          const st = (effYmd && todayYmd < effYmd) ? 'Future' : 'Active';
+          mdqraRows.push({
+            id: r.id,
+            source: 'request (approved)',
+            member: r.requesterUsername || r.requesterUid || '—',
+            percent: Number(r.reductionPercent) || 0,
+            effective: effYmd || '—',
+            status: st,
+            notes: r.reason || '—',
+            kind: 'request',
+            type: 'MDQRA',
+            userId: r.requesterUid || null,
+          });
         }
       });
 
@@ -490,7 +528,7 @@
       mdqraRows.sort((a, b) => String(a.member).localeCompare(String(b.member)));
 
       if (!loaRows.length) {
-        loaBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">No current LOA.</td></tr>';
+        loaBody.innerHTML = '<tr><td colspan="7" class="text-muted" style="padding:16px">No LOA records found.</td></tr>';
       } else {
         loaBody.innerHTML = loaRows.map((x) => {
           const delBtn = canHardDeleteRelief()
@@ -501,6 +539,7 @@
             <td>${escHtml(x.source)}</td>
             <td>${escHtml(x.start)}</td>
             <td>${escHtml(x.end)}</td>
+            <td>${escHtml(x.status || '—')}</td>
             <td>${escHtml(x.notes)}</td>
             <td>
               <button type="button" class="btn btn-sm btn-warning qc-relief-revoke" data-kind="${escHtml(x.kind)}" data-type="${escHtml(x.type)}" data-id="${escHtml(x.id)}">Revoke</button>
@@ -511,7 +550,7 @@
       }
 
       if (!mdqraRows.length) {
-        mdqraBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">No active quota reductions.</td></tr>';
+        mdqraBody.innerHTML = '<tr><td colspan="7" class="text-muted" style="padding:16px">No quota reduction records found.</td></tr>';
       } else {
         mdqraBody.innerHTML = mdqraRows.map((x) => {
           const delBtn = canHardDeleteRelief()
@@ -522,6 +561,7 @@
             <td>${escHtml(x.source)}</td>
             <td>${escHtml(String(x.percent))}%</td>
             <td>${escHtml(x.effective)}</td>
+            <td>${escHtml(x.status || '—')}</td>
             <td>${escHtml(x.notes)}</td>
             <td>
               <button type="button" class="btn btn-sm btn-warning qc-relief-revoke" data-kind="${escHtml(x.kind)}" data-type="${escHtml(x.type)}" data-id="${escHtml(x.id)}">Revoke</button>
@@ -590,8 +630,8 @@
     } catch (e) {
       console.error(e);
       showAlert('qc-relief-alert', 'danger', escHtml(e.message || String(e)));
-      loaBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Error loading.</td></tr>';
-      mdqraBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Error loading.</td></tr>';
+      loaBody.innerHTML = '<tr><td colspan="7" class="text-muted" style="padding:16px">Error loading.</td></tr>';
+      mdqraBody.innerHTML = '<tr><td colspan="7" class="text-muted" style="padding:16px">Error loading.</td></tr>';
     }
   }
 
