@@ -70,6 +70,22 @@
       ]
     },
     {
+      "collectionGroup": "quota_modifiers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "divisionId", "order": "ASCENDING" },
+        { "fieldPath": "active",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "quota_modifiers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sourceRequestId", "order": "ASCENDING" },
+        { "fieldPath": "active",          "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "quota_requests",
       "queryScope": "COLLECTION",
       "fields": [

@@ -313,14 +313,29 @@ service cloud.firestore {
             && request.resource.data.loaStart is string
             && request.resource.data.loaEnd is string)
         );
+      // Decide pending
       allow update: if authed()
         && canManageQuotaForDivision(resource.data.divisionId)
         && resource.data.status == 'pending'
         && request.resource.data.status in ['approved', 'rejected']
         && request.resource.data.decidedByUid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['status', 'decidedAt', 'decidedByUid', 'decidedByUsername', 'decisionNotes']);
-      allow delete: if false;
+             .hasOnly(['status', 'decidedAt', 'decidedByUid', 'decidedByUsername', 'decisionNotes'])
+      // Revoke approved
+      || (
+        authed()
+        && canManageQuotaForDivision(resource.data.divisionId)
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'revoked'
+        && request.resource.data.revokedByUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'revokedAt', 'revokedByUid', 'revokedByUsername', 'revokeReason'])
+      );
+
+      // Hard delete: SecNav+ only
+      allow delete: if authed()
+        && canManageQuotaForDivision(resource.data.divisionId)
+        && (quotaIsAdministrator() || pl() >= 90 || selfDoc().get('rankId', '') == 'secnav');
     }
 
     // ── /quota_modifiers/{id} — legacy (Cloud-created only); read for quota math ──
@@ -330,7 +345,20 @@ service cloud.firestore {
         || pl() >= 60
         || (pl() >= 44 && resource.data.get('divisionId', '') == divId() && divId() != '')
       );
-      allow create, update, delete: if false;
+      // Only allow quota authority to revoke (disable) modifiers for their managed divisions.
+      allow update: if authed()
+        && canManageQuotaForDivision(resource.data.divisionId)
+        && resource.data.get('active', false) == true
+        && request.resource.data.get('active', true) == false
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['active', 'revokedAt', 'revokedByUid', 'revokedByUsername', 'revokeReason']);
+
+      // Hard delete: SecNav+ only (rare; for cleanup).
+      allow delete: if authed()
+        && canManageQuotaForDivision(resource.data.divisionId)
+        && (quotaIsAdministrator() || pl() >= 90 || selfDoc().get('rankId', '') == 'secnav');
+
+      allow create: if false;
     }
 
     // ── /quota_attendance/{id} — reviewers sync on log approval ──

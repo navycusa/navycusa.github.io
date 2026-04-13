@@ -363,9 +363,240 @@
       console.error(e);
       showAlert('qc-req-alert', 'danger', escHtml(e.message || String(e)));
     }
+    await refreshRelief();
     await refreshReform();
     await refreshGlobalPending();
   }
+
+  function isoTodayUtc() {
+    const d = new Date();
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  }
+
+  function dateInRangeYMD(todayUtc, startYmd, endYmd) {
+    const Quota = window.QuotaLogic;
+    if (!Quota) return false;
+    const s = Quota.parseYMD(startYmd);
+    if (!s) return false;
+    let e = endYmd ? Quota.parseYMD(endYmd) : new Date(8640000000000000);
+    if (!e) e = new Date(8640000000000000);
+    e.setUTCHours(23, 59, 59, 999);
+    return todayUtc.getTime() >= s.getTime() && todayUtc.getTime() <= e.getTime();
+  }
+
+  function fmtTs(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toISOString().slice(0, 10);
+  }
+
+  function canHardDeleteRelief() {
+    return u.permission_level >= PERM.QUOTA_HQ_AUTHORITY || u.rankId === 'secnav' || u.rankId === 'administrator';
+  }
+
+  async function refreshRelief() {
+    clearAlert('qc-relief-alert');
+    const loaBody = document.getElementById('qc-relief-loa-body');
+    const mdqraBody = document.getElementById('qc-relief-mdqra-body');
+    if (!loaBody || !mdqraBody) return;
+    if (!currentDivisionId) {
+      loaBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Load a division…</td></tr>';
+      mdqraBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Load a division…</td></tr>';
+      return;
+    }
+
+    const today = isoTodayUtc();
+    try {
+      const [approvedReqs, activeMods] = await Promise.all([
+        QF.listApprovedQuotaRequestsForDivision(currentDivisionId),
+        QF.listActiveQuotaModifiersForDivision(currentDivisionId),
+      ]);
+
+      const loaRows = [];
+      const mdqraRows = [];
+
+      // Modifiers are the canonical "active relief" because quota math checks them.
+      (activeMods || []).forEach((m) => {
+        if (m.type === 'LOA') {
+          if (dateInRangeYMD(today, m.startDate, m.endDate)) {
+            loaRows.push({
+              id: m.id,
+              source: m.sourceRequestId ? 'modifier (from request)' : 'modifier',
+              member: m.userId || '—',
+              start: m.startDate || '—',
+              end: m.endDate || '—',
+              notes: m.sourceRequestId ? `request ${m.sourceRequestId}` : '—',
+              kind: 'modifier',
+              type: 'LOA',
+              userId: m.userId || null,
+            });
+          }
+        } else if (m.type === 'MDQRA') {
+          if (dateInRangeYMD(today, m.startDate, m.endDate)) {
+            mdqraRows.push({
+              id: m.id,
+              source: m.sourceRequestId ? 'modifier (from request)' : 'modifier',
+              member: m.userId || '—',
+              percent: Number(m.reductionPercent) || 0,
+              effective: `${m.startDate || '—'} → ${m.endDate || '—'}`,
+              notes: m.sourceRequestId ? `request ${m.sourceRequestId}` : '—',
+              kind: 'modifier',
+              type: 'MDQRA',
+              userId: m.userId || null,
+            });
+          }
+        }
+      });
+
+      // Also include approved requests that are currently effective (in case modifiers were never created / legacy).
+      (approvedReqs || []).forEach((r) => {
+        if (r.requestType === 'LOA') {
+          if (dateInRangeYMD(today, r.loaStart, r.loaEnd)) {
+            loaRows.push({
+              id: r.id,
+              source: 'request (approved)',
+              member: r.requesterUsername || r.requesterUid || '—',
+              start: r.loaStart || '—',
+              end: r.loaEnd || '—',
+              notes: r.reason || '—',
+              kind: 'request',
+              type: 'LOA',
+              userId: r.requesterUid || null,
+            });
+          }
+        } else if (r.requestType === 'MDQRA') {
+          const decided = r.decidedAt ? (r.decidedAt.toDate ? r.decidedAt.toDate() : new Date(r.decidedAt)) : null;
+          const eff = decided && !Number.isNaN(decided.getTime())
+            ? new Date(Date.UTC(decided.getUTCFullYear(), decided.getUTCMonth(), decided.getUTCDate()))
+            : today;
+          if (today.getTime() >= eff.getTime()) {
+            mdqraRows.push({
+              id: r.id,
+              source: 'request (approved)',
+              member: r.requesterUsername || r.requesterUid || '—',
+              percent: Number(r.reductionPercent) || 0,
+              effective: fmtTs(r.decidedAt),
+              notes: r.reason || '—',
+              kind: 'request',
+              type: 'MDQRA',
+              userId: r.requesterUid || null,
+            });
+          }
+        }
+      });
+
+      loaRows.sort((a, b) => String(a.member).localeCompare(String(b.member)));
+      mdqraRows.sort((a, b) => String(a.member).localeCompare(String(b.member)));
+
+      if (!loaRows.length) {
+        loaBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">No current LOA.</td></tr>';
+      } else {
+        loaBody.innerHTML = loaRows.map((x) => {
+          const delBtn = canHardDeleteRelief()
+            ? `<button type="button" class="btn btn-sm btn-danger qc-relief-del" data-kind="${escHtml(x.kind)}" data-type="${escHtml(x.type)}" data-id="${escHtml(x.id)}">Delete</button>`
+            : '';
+          return `<tr>
+            <td>${escHtml(x.member)}</td>
+            <td>${escHtml(x.source)}</td>
+            <td>${escHtml(x.start)}</td>
+            <td>${escHtml(x.end)}</td>
+            <td>${escHtml(x.notes)}</td>
+            <td>
+              <button type="button" class="btn btn-sm btn-warning qc-relief-revoke" data-kind="${escHtml(x.kind)}" data-type="${escHtml(x.type)}" data-id="${escHtml(x.id)}">Revoke</button>
+              ${delBtn}
+            </td>
+          </tr>`;
+        }).join('');
+      }
+
+      if (!mdqraRows.length) {
+        mdqraBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">No active quota reductions.</td></tr>';
+      } else {
+        mdqraBody.innerHTML = mdqraRows.map((x) => {
+          const delBtn = canHardDeleteRelief()
+            ? `<button type="button" class="btn btn-sm btn-danger qc-relief-del" data-kind="${escHtml(x.kind)}" data-type="${escHtml(x.type)}" data-id="${escHtml(x.id)}">Delete</button>`
+            : '';
+          return `<tr>
+            <td>${escHtml(x.member)}</td>
+            <td>${escHtml(x.source)}</td>
+            <td>${escHtml(String(x.percent))}%</td>
+            <td>${escHtml(x.effective)}</td>
+            <td>${escHtml(x.notes)}</td>
+            <td>
+              <button type="button" class="btn btn-sm btn-warning qc-relief-revoke" data-kind="${escHtml(x.kind)}" data-type="${escHtml(x.type)}" data-id="${escHtml(x.id)}">Revoke</button>
+              ${delBtn}
+            </td>
+          </tr>`;
+        }).join('');
+      }
+
+      function bindReliefActions(container) {
+        if (!container) return;
+        container.querySelectorAll('.qc-relief-revoke').forEach((b) => {
+          b.addEventListener('click', async () => {
+            const id = b.dataset.id;
+            const kind = b.dataset.kind;
+            if (!id) return;
+            if (!confirm('Revoke this relief so it stops applying?')) return;
+            const reason = prompt('Revoke reason (optional):') ?? '';
+            try {
+              b.disabled = true;
+              clearAlert('qc-relief-alert');
+              if (kind === 'modifier') {
+                await QF.revokeQuotaModifier(id, u, reason || null);
+              } else {
+                await QF.revokeQuotaRequest(id, u, reason || null);
+              }
+              await auditLog('quota.relief.revoke', kind === 'modifier' ? 'quota_modifier' : 'quota_request', id, { reason: reason || null });
+              showAlert('qc-relief-alert', 'success', 'Relief revoked.');
+              await refreshRelief();
+            } catch (e) {
+              showAlert('qc-relief-alert', 'danger', escHtml(e.message || String(e)));
+            } finally {
+              b.disabled = false;
+            }
+          });
+        });
+        container.querySelectorAll('.qc-relief-del').forEach((b) => {
+          b.addEventListener('click', async () => {
+            const id = b.dataset.id;
+            const kind = b.dataset.kind;
+            if (!id) return;
+            if (!canHardDeleteRelief()) { alert('SecNav+ only.'); return; }
+            if (!confirm('Permanently delete this relief record?')) return;
+            try {
+              b.disabled = true;
+              clearAlert('qc-relief-alert');
+              if (kind === 'modifier') {
+                await QF.deleteQuotaModifier(id, u);
+              } else {
+                await QF.deleteQuotaRequest(id, u);
+              }
+              await auditLog('quota.relief.delete', kind === 'modifier' ? 'quota_modifier' : 'quota_request', id, {});
+              showAlert('qc-relief-alert', 'success', 'Relief deleted.');
+              await refreshRelief();
+            } catch (e) {
+              showAlert('qc-relief-alert', 'danger', escHtml(e.message || String(e)));
+            } finally {
+              b.disabled = false;
+            }
+          });
+        });
+      }
+
+      bindReliefActions(loaBody);
+      bindReliefActions(mdqraBody);
+    } catch (e) {
+      console.error(e);
+      showAlert('qc-relief-alert', 'danger', escHtml(e.message || String(e)));
+      loaBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Error loading.</td></tr>';
+      mdqraBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">Error loading.</td></tr>';
+    }
+  }
+
+  const reliefRefreshBtn = document.getElementById('qc-relief-refresh');
+  if (reliefRefreshBtn) reliefRefreshBtn.addEventListener('click', refreshRelief);
 
   function renderRequests(rows) {
     const tbody = document.getElementById('qc-req-body');

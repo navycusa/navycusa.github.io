@@ -176,6 +176,75 @@
     };
   }
 
+  function buildQuotaReliefRevokedEmbed(relief, divisionName, actorUsername) {
+    const div = divisionName || relief.divisionId || '—';
+    const kind = relief.kind === 'modifier' ? 'Quota Modifier' : 'Quota Request';
+    const t = String(relief.type || relief.requestType || '').toUpperCase();
+    const fields = [
+      { name: 'Division', value: String(div), inline: true },
+      { name: 'Source', value: String(kind), inline: true },
+      { name: 'Type', value: t || '—', inline: true },
+    ];
+    const who = relief.requesterUsername || relief.requesterUid || relief.userId || '—';
+    fields.push({ name: 'Personnel', value: String(who), inline: true });
+
+    if (t === 'LOA') {
+      const s = relief.loaStart || relief.startDate || '—';
+      const e = relief.loaEnd || relief.endDate || '—';
+      fields.push({ name: 'Window', value: `${s} → ${e}`, inline: false });
+    }
+    if (t === 'MDQRA') {
+      const p = relief.reductionPercent != null ? `${relief.reductionPercent}%` : '—';
+      fields.push({ name: 'Reduction', value: String(p), inline: true });
+    }
+
+    fields.push({ name: 'Revoked by', value: String(actorUsername || '—'), inline: true });
+    if (relief.revokeReason) fields.push({ name: 'Reason', value: String(relief.revokeReason).slice(0, 1024), inline: false });
+
+    return {
+      title: '🛑 Quota relief revoked',
+      color: 0xe67e22,
+      description: 'An active quota relief item was **revoked** and should no longer apply.',
+      fields,
+      footer: defaultFooter(),
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  function buildQuotaReliefDeletedEmbed(relief, divisionName, actorUsername) {
+    const div = divisionName || relief.divisionId || '—';
+    const kind = relief.kind === 'modifier' ? 'Quota Modifier' : 'Quota Request';
+    const t = String(relief.type || relief.requestType || '').toUpperCase();
+    const fields = [
+      { name: 'Division', value: String(div), inline: true },
+      { name: 'Source', value: String(kind), inline: true },
+      { name: 'Type', value: t || '—', inline: true },
+    ];
+    const who = relief.requesterUsername || relief.requesterUid || relief.userId || '—';
+    fields.push({ name: 'Personnel', value: String(who), inline: true });
+
+    if (t === 'LOA') {
+      const s = relief.loaStart || relief.startDate || '—';
+      const e = relief.loaEnd || relief.endDate || '—';
+      fields.push({ name: 'Window', value: `${s} → ${e}`, inline: false });
+    }
+    if (t === 'MDQRA') {
+      const p = relief.reductionPercent != null ? `${relief.reductionPercent}%` : '—';
+      fields.push({ name: 'Reduction', value: String(p), inline: true });
+    }
+
+    fields.push({ name: 'Deleted by', value: String(actorUsername || '—'), inline: true });
+
+    return {
+      title: '🗑️ Quota relief deleted',
+      color: 0x95a5a6,
+      description: 'A quota relief record was **deleted** (hard removal).',
+      fields,
+      footer: defaultFooter(),
+      timestamp: new Date().toISOString(),
+    };
+  }
+
   /**
    * @param {firebase.firestore.Firestore} firestoreDb
    * @param {'pending'|'approved'} channel
@@ -214,5 +283,7 @@
     buildLogRejectedEmbed,
     buildQuotaRequestPendingEmbed,
     buildQuotaRequestDecidedEmbed,
+    buildQuotaReliefRevokedEmbed,
+    buildQuotaReliefDeletedEmbed,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

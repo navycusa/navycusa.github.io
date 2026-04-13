@@ -299,6 +299,21 @@
     }
   }
 
+  async function notifyQuotaDiscordRelief(action, relief, divisionId, caller) {
+    const DW = global.DiscordWebhooks;
+    if (!DW) return;
+    try {
+      const divSnap = await db.collection('divisions').doc(divisionId).get();
+      const divName = divSnap.exists ? divSnap.data().name : null;
+      const embed = action === 'revoked'
+        ? DW.buildQuotaReliefRevokedEmbed(relief, divName, caller && caller.username)
+        : DW.buildQuotaReliefDeletedEmbed(relief, divName, caller && caller.username);
+      await DW.postEmbed(db, divisionId, 'approved', embed);
+    } catch (e) {
+      console.warn('Quota relief Discord notify failed (non-fatal):', e.message || e);
+    }
+  }
+
   async function submitQuotaRequest(caller, payload) {
     const divisionId = caller.divisionId;
     if (!divisionId || divisionId === 'ndvl') {
@@ -370,6 +385,109 @@
       decisionNotes: decisionNotes || null,
     });
     await notifyQuotaDiscordDecide(req, approve, decisionNotes, caller);
+  }
+
+  async function listApprovedQuotaRequestsForDivision(divisionId) {
+    if (!divisionId || divisionId === 'ndvl') return [];
+    const snap = await db.collection('quota_requests')
+      .where('divisionId', '==', divisionId)
+      .where('status', '==', 'approved')
+      .get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  }
+
+  async function listActiveQuotaModifiersForDivision(divisionId) {
+    if (!divisionId || divisionId === 'ndvl') return [];
+    try {
+      const snap = await db.collection('quota_modifiers')
+        .where('divisionId', '==', divisionId)
+        .where('active', '==', true)
+        .get();
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  async function revokeQuotaRequest(requestId, caller, revokeReason) {
+    const ref = db.collection('quota_requests').doc(requestId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error('Request not found.');
+    const req = snap.data();
+    if (req.status !== 'approved') throw new Error('Only approved requests can be revoked.');
+    const batch = db.batch();
+    batch.update(ref, {
+      status: 'revoked',
+      revokedAt: fv().serverTimestamp(),
+      revokedByUid: caller.uid,
+      revokedByUsername: caller.username,
+      revokeReason: revokeReason || null,
+    });
+
+    // Best-effort: if this request spawned quota_modifiers, revoke those too so relief stops applying.
+    try {
+      const modsSnap = await db.collection('quota_modifiers')
+        .where('sourceRequestId', '==', requestId)
+        .where('active', '==', true)
+        .get();
+      modsSnap.docs.forEach((d) => {
+        batch.update(d.ref, {
+          active: false,
+          revokedAt: fv().serverTimestamp(),
+          revokedByUid: caller.uid,
+          revokedByUsername: caller.username,
+          revokeReason: revokeReason || null,
+        });
+      });
+    } catch (_) { /* ignore if not permitted / missing index */ }
+
+    await batch.commit();
+    await notifyQuotaDiscordRelief('revoked', { ...req, kind: 'request', revokeReason: revokeReason || null }, req.divisionId, caller);
+  }
+
+  async function deleteQuotaRequest(requestId, caller) {
+    const ref = db.collection('quota_requests').doc(requestId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error('Request not found.');
+    const req = snap.data();
+    const batch = db.batch();
+
+    // Best-effort: also delete linked modifiers.
+    try {
+      const modsSnap = await db.collection('quota_modifiers')
+        .where('sourceRequestId', '==', requestId)
+        .get();
+      modsSnap.docs.forEach((d) => batch.delete(d.ref));
+    } catch (_) { /* ignore */ }
+
+    batch.delete(ref);
+    await batch.commit();
+    await notifyQuotaDiscordRelief('deleted', { ...req, kind: 'request' }, req.divisionId, caller);
+  }
+
+  async function revokeQuotaModifier(modifierId, caller, revokeReason) {
+    const ref = db.collection('quota_modifiers').doc(modifierId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error('Modifier not found.');
+    const m = snap.data();
+    if (m.active !== true) throw new Error('Modifier is not active.');
+    await ref.update({
+      active: false,
+      revokedAt: fv().serverTimestamp(),
+      revokedByUid: caller.uid,
+      revokedByUsername: caller.username,
+      revokeReason: revokeReason || null,
+    });
+    await notifyQuotaDiscordRelief('revoked', { ...m, kind: 'modifier', revokeReason: revokeReason || null }, m.divisionId, caller);
+  }
+
+  async function deleteQuotaModifier(modifierId, caller) {
+    const ref = db.collection('quota_modifiers').doc(modifierId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new Error('Modifier not found.');
+    const m = snap.data();
+    await ref.delete();
+    await notifyQuotaDiscordRelief('deleted', { ...m, kind: 'modifier' }, m.divisionId, caller);
   }
 
   async function saveQuotaPolicy(callerUid, divisionId, data) {
@@ -548,8 +666,14 @@
     resolveEventAttendees,
     listCommandData,
     listPendingQuotaRequestsForDivisions,
+    listApprovedQuotaRequestsForDivision,
+    listActiveQuotaModifiersForDivision,
     submitQuotaRequest,
     decideQuotaRequest,
+    revokeQuotaRequest,
+    deleteQuotaRequest,
+    revokeQuotaModifier,
+    deleteQuotaModifier,
     saveQuotaPolicy,
     saveEventDefinition,
     deleteEventDefinition,
