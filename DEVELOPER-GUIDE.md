@@ -129,7 +129,7 @@ Profile + authorization. Read/write rules enforce hierarchy (cannot assign rank 
 - `name`, `short`, optional `isHeadquarters` (HQ division — special quota rules).
 - `webhookUrl`, `webhookUrlPending`, `webhookUrlApproved` — Discord integration.
 - `ranks[]` — division-specific rank objects (id, name, shortName, tier, mappedRankId, order).
-- `eventTypes[]` — optional override list for Activity Log event dropdown; empty = global `EVENT_TYPES` from `ranks.js`.
+- `eventTypes[]` — list of allowed event types for that division (used by Activity Log + Quota policy builder). No global defaults.
 
 Default division IDs include `hq`, `ndvl`, etc. (`DEFAULT_DIVISIONS`).
 

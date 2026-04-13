@@ -75,12 +75,6 @@
   divSel.value = currentDivisionId;
 
   const typeSel = document.getElementById('qc-def-type');
-  EVENT_TYPES.filter((t) => t !== 'Custom Event').forEach((t) => {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
-    typeSel.appendChild(opt);
-  });
 
   const rankSel = document.getElementById('qc-pol-rank');
   RANKS.forEach((r) => {
@@ -114,14 +108,31 @@
   const addRuleBtn = document.getElementById('qc-rule-add');
   const clearDraftBtn = document.getElementById('qc-rule-clear');
 
-  const EVENT_TYPES_SIMPLE = EVENT_TYPES.filter((t) => t !== 'Custom Event');
-  function fillEventTypeSelect(sel) {
+  function divisionEventTypes(divId) {
+    const d = divisions.find((x) => x.id === divId);
+    const raw = (d && Array.isArray(d.eventTypes)) ? d.eventTypes : [];
+    return raw.map((t) => String(t || '').trim()).filter(Boolean);
+  }
+
+  function divisionStandardEventTypes(divId) {
+    return divisionEventTypes(divId).filter((t) => t !== 'Custom Event');
+  }
+
+  function fillEventTypeSelect(sel, types, placeholder) {
     if (!sel) return;
-    sel.innerHTML = '<option value="">— Select —</option>' + EVENT_TYPES_SIMPLE
+    const ph = placeholder || '— Select —';
+    sel.innerHTML = `<option value="">${escHtml(ph)}</option>` + (types || [])
       .map((t) => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
   }
-  fillEventTypeSelect(groupItemSel);
-  fillEventTypeSelect(mandatoryTypeSel);
+
+  function refreshDivisionEventTypeOptions() {
+    const types = divisionStandardEventTypes(currentDivisionId);
+    if (typeSel) fillEventTypeSelect(typeSel, types, '— None —');
+    fillEventTypeSelect(groupItemSel, types, '— Select —');
+    fillEventTypeSelect(mandatoryTypeSel, types, '— Select —');
+  }
+
+  refreshDivisionEventTypeOptions();
 
   let draftRules = [];
   let groupPool = [];
@@ -276,6 +287,7 @@
     currentDivisionId = divSel.value;
     const div = divisions.find((x) => x.id === currentDivisionId);
     currentIsHQ = div && (div.isHeadquarters === true || div.id === HQ_DIVISION_ID);
+    refreshDivisionEventTypeOptions();
     await refreshAll();
   });
 

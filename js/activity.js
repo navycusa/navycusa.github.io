@@ -79,21 +79,25 @@
   }
 
   async function loadEventTypesForDivision(divisionId) {
-    let typesToShow = EVENT_TYPES;
+    // No global defaults: event types come only from the division document.
+    // Always allow Custom Event as an escape hatch for free-text naming.
+    let typesToShow = ['Custom Event'];
     if (divisionId && divisionId !== 'ndvl') {
       try {
         const divSnap = await db.collection('divisions').doc(divisionId).get();
         if (divSnap.exists) {
           const divTypes = divSnap.data().eventTypes;
           if (Array.isArray(divTypes) && divTypes.length) {
-            const hasCustom = divTypes.includes('Custom Event');
-            typesToShow = hasCustom ? [...divTypes] : [...divTypes, 'Custom Event'];
+            const cleaned = divTypes
+              .map((t) => String(t || '').trim())
+              .filter(Boolean);
+            typesToShow = [...cleaned, 'Custom Event'];
           }
         }
       } catch (_) {}
     }
     eventTypeSelect.innerHTML = '<option value="">— Select Type —</option>';
-    typesToShow.forEach(t => {
+    [...new Set(typesToShow)].forEach(t => {
       const opt = document.createElement('option');
       opt.value = t;
       opt.textContent = t;

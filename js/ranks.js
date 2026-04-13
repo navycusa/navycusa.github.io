@@ -57,20 +57,6 @@ const NDVL_DIVISION_ID = 'ndvl';
 /** Additional affiliations (not a primary division). Managed by CNP+; staff may invite/edit NDVL personnel. */
 const PERSONNEL_OFFICE_IDS = ['ocnp', 'ocno'];
 
-const EVENT_TYPES = [
-  'Training Exercise',
-  'Combat Operation',
-  'Ceremonial Duty',
-  'Inspection',
-  'Briefing / Debrief',
-  'Recruitment Drive',
-  'Joint Operation',
-  'Patrol',
-  'Awards Ceremony',
-  'Physical Training (PT)',
-  'Custom Event',
-];
-
 // Permission level thresholds — keep in sync with Firestore rules
 const PERM = {
   ADMIN_PANEL:           60,   // CNP+
