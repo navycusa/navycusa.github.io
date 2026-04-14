@@ -273,7 +273,10 @@
     try {
       const divSnap = await db.collection('divisions').doc(divisionId).get();
       const divName = divSnap.exists ? divSnap.data().name : null;
-      await DW.postEmbed(db, divisionId, 'pending', DW.buildQuotaRequestPendingEmbed(reqLike, divName));
+      const t = String(reqLike && reqLike.requestType || '').toUpperCase();
+      const category = t === 'LOA' ? 'loa' : (t === 'MDQRA' ? 'mdqra' : 'general');
+      await DW.postEmbed(db, divisionId, { category, status: 'pending' },
+        DW.buildQuotaRequestPendingEmbed(reqLike, divName));
     } catch (e) {
       console.warn('Quota request Discord notify failed (non-fatal):', e.message || e);
     }
@@ -291,8 +294,10 @@
         decisionNotes: decisionNotes || null,
         decidedByUsername: caller.username,
       };
-      const channel = approve ? 'approved' : 'pending';
-      await DW.postEmbed(db, req.divisionId, channel,
+      const t = String(req && req.requestType || '').toUpperCase();
+      const category = t === 'LOA' ? 'loa' : (t === 'MDQRA' ? 'mdqra' : 'general');
+      // Route all "decided" notifications to the decided/approved bucket.
+      await DW.postEmbed(db, req.divisionId, { category, status: 'approved' },
         DW.buildQuotaRequestDecidedEmbed(merged, divName, approve, decisionNotes || null, caller.username));
     } catch (e) {
       console.warn('Quota decision Discord notify failed (non-fatal):', e.message || e);
@@ -308,7 +313,7 @@
       const embed = action === 'revoked'
         ? DW.buildQuotaReliefRevokedEmbed(relief, divName, caller && caller.username)
         : DW.buildQuotaReliefDeletedEmbed(relief, divName, caller && caller.username);
-      await DW.postEmbed(db, divisionId, 'approved', embed);
+      await DW.postEmbed(db, divisionId, { category: 'general', status: 'approved' }, embed);
     } catch (e) {
       console.warn('Quota relief Discord notify failed (non-fatal):', e.message || e);
     }

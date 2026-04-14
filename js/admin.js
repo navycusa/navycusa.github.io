@@ -158,6 +158,7 @@
     const cbOcnp      = document.getElementById('um-ocnp');
     const cbOcno      = document.getElementById('um-ocno');
     const activeCb    = document.getElementById('um-active');
+    const discordIdEl = document.getElementById('um-discord-id');
     const toggleActiveBtn = document.getElementById('um-toggle-active');
     const deletePermBtn   = document.getElementById('um-delete-permanent');
 
@@ -245,6 +246,7 @@
       await refreshDivRanks(divSel.value);
       divRankSel.value = usr.divRankId || '';
       activeCb.checked = usr.isActive !== false;
+      if (discordIdEl) discordIdEl.value = usr.discordId || '';
       if (showPoAffil) {
         const poList = Array.isArray(usr.personnelOffices) ? usr.personnelOffices : [];
         cbOcnp.checked = poList.includes('ocnp');
@@ -296,6 +298,7 @@
       divRankSel.innerHTML = '<option value="">— None (use main rank) —</option>';
       document.getElementById('um-div-rank-group').classList.add('hidden');
       activeCb.checked = true;
+      if (discordIdEl) discordIdEl.value = '';
       document.getElementById('user-modal-save').onclick = () => saveUser(null, null);
     }
     modal.classList.remove('hidden');
@@ -318,7 +321,14 @@
       : document.getElementById('um-division').value;
     const divRankId  = document.getElementById('um-div-rank').value;
     const isActive   = document.getElementById('um-active').checked;
+    const discordIdRaw = (document.getElementById('um-discord-id') ? document.getElementById('um-discord-id').value : '').trim();
     const btn        = document.getElementById('user-modal-save');
+
+    const discordId = discordIdRaw ? discordIdRaw.replace(/[<@!>]/g, '').trim() : '';
+    if (discordId && !/^\d{15,25}$/.test(discordId)) {
+      showAlert('user-modal-alert', 'danger', 'Discord ID must be 15–25 digits (a Discord snowflake).');
+      return;
+    }
 
     if (!username || !rankId || !divisionId) {
       showAlert('user-modal-alert', 'danger', 'Username, main rank, and division are required.');
@@ -357,6 +367,7 @@
         rankShort:        divRankId ? (divRankData.divRankShort || rankObj.short) : rankObj.short,
         permission_level: rankObj.pl,
         divisionId, divisionName: divName, isActive,
+        discordId:        discordId || null,
         ...divRankData,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedBy: u.uid,
@@ -430,6 +441,23 @@
   // ══════════════════════════════════════════════════════════
   await loadPendingLogs();
 
+  async function discordMentionsForUids(uids) {
+    const clean = [...new Set((uids || []).filter(Boolean))];
+    if (!clean.length) return '';
+    try {
+      const snaps = await Promise.all(clean.map((id) => db.collection('users').doc(id).get()));
+      const ids = snaps
+        .filter((s) => s.exists)
+        .map((s) => s.data().discordId)
+        .map((x) => String(x || '').trim())
+        .filter((x) => /^\d{15,25}$/.test(x));
+      const uniq = [...new Set(ids)];
+      return uniq.length ? uniq.map((id) => `<@${id}>`).join(' ') : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
   async function loadPendingLogs() {
     const tbody = document.getElementById('review-body');
     tbody.innerHTML = loadingRow(6);
@@ -487,8 +515,19 @@
 
       if (decision === 'approved' && logData) {
         if (window.DiscordWebhooks && logData.divisionId) {
-          await window.DiscordWebhooks.postEmbed(db, logData.divisionId, 'approved',
-            window.DiscordWebhooks.buildLogApprovedEmbed(logData));
+          const category = logData.type === 'event' ? 'event' : 'duty';
+          const mentionUids = [
+            logData.authorUid,
+            ...(Array.isArray(logData.attendeeUids) ? logData.attendeeUids : []),
+          ];
+          const content = await discordMentionsForUids(mentionUids);
+          await window.DiscordWebhooks.postEmbed(
+            db,
+            logData.divisionId,
+            { category, status: 'approved' },
+            window.DiscordWebhooks.buildLogApprovedEmbed(logData),
+            content ? { content } : undefined,
+          );
         }
 
         const proofUrl = logData.proofImageUrl || null;
@@ -508,7 +547,8 @@
           }
         }
       } else if (decision === 'rejected' && logData && window.DiscordWebhooks && logData.divisionId) {
-        await window.DiscordWebhooks.postEmbed(db, logData.divisionId, 'pending',
+        const category = logData.type === 'event' ? 'event' : 'duty';
+        await window.DiscordWebhooks.postEmbed(db, logData.divisionId, { category, status: 'pending' },
           window.DiscordWebhooks.buildLogRejectedEmbed(
             { ...logData, reviewerUsername: u.username },
             note || null,
@@ -642,10 +682,28 @@
   }
 
   function effectiveDivWebhookPending(div) {
-    return (div.webhookUrlPending || div.webhookUrl || '').trim();
+    const any = [
+      div.webhookUrlGeneral,
+      div.webhookDutyPending,
+      div.webhookEventPending,
+      div.webhookLoaPending,
+      div.webhookMdqraPending,
+      div.webhookUrlPending,
+      div.webhookUrl,
+    ].map((x) => String(x || '').trim()).find(Boolean);
+    return any || '';
   }
   function effectiveDivWebhookApproved(div) {
-    return (div.webhookUrlApproved || div.webhookUrl || '').trim();
+    const any = [
+      div.webhookUrlGeneral,
+      div.webhookDutyApproved,
+      div.webhookEventApproved,
+      div.webhookLoaApproved,
+      div.webhookMdqraApproved,
+      div.webhookUrlApproved,
+      div.webhookUrl,
+    ].map((x) => String(x || '').trim()).find(Boolean);
+    return any || '';
   }
 
   function renderDivisions() {
@@ -717,6 +775,15 @@
       title.textContent = 'Edit Division';
       document.getElementById('dm-name').value    = div.name;
       document.getElementById('dm-short').value   = div.short      || '';
+      document.getElementById('dm-webhook-general').value = div.webhookUrlGeneral || '';
+      document.getElementById('dm-webhook-duty-pending').value = div.webhookDutyPending || '';
+      document.getElementById('dm-webhook-duty-approved').value = div.webhookDutyApproved || '';
+      document.getElementById('dm-webhook-event-pending').value = div.webhookEventPending || '';
+      document.getElementById('dm-webhook-event-approved').value = div.webhookEventApproved || '';
+      document.getElementById('dm-webhook-loa-pending').value = div.webhookLoaPending || '';
+      document.getElementById('dm-webhook-loa-approved').value = div.webhookLoaApproved || '';
+      document.getElementById('dm-webhook-mdqra-pending').value = div.webhookMdqraPending || '';
+      document.getElementById('dm-webhook-mdqra-approved').value = div.webhookMdqraApproved || '';
       document.getElementById('dm-webhook-pending').value  = div.webhookUrlPending || '';
       document.getElementById('dm-webhook-approved').value = div.webhookUrlApproved || '';
       document.getElementById('dm-webhook-legacy').value   = div.webhookUrl || '';
@@ -727,6 +794,15 @@
       title.textContent = 'Add Division';
       document.getElementById('dm-name').value    = '';
       document.getElementById('dm-short').value   = '';
+      document.getElementById('dm-webhook-general').value = '';
+      document.getElementById('dm-webhook-duty-pending').value = '';
+      document.getElementById('dm-webhook-duty-approved').value = '';
+      document.getElementById('dm-webhook-event-pending').value = '';
+      document.getElementById('dm-webhook-event-approved').value = '';
+      document.getElementById('dm-webhook-loa-pending').value = '';
+      document.getElementById('dm-webhook-loa-approved').value = '';
+      document.getElementById('dm-webhook-mdqra-pending').value = '';
+      document.getElementById('dm-webhook-mdqra-approved').value = '';
       document.getElementById('dm-webhook-pending').value  = '';
       document.getElementById('dm-webhook-approved').value = '';
       document.getElementById('dm-webhook-legacy').value   = '';
@@ -845,6 +921,15 @@
   async function saveDivision(divId) {
     const name    = document.getElementById('dm-name').value.trim();
     const short   = document.getElementById('dm-short').value.trim();
+    const whGeneral = document.getElementById('dm-webhook-general').value.trim();
+    const whDutyPend = document.getElementById('dm-webhook-duty-pending').value.trim();
+    const whDutyAppr = document.getElementById('dm-webhook-duty-approved').value.trim();
+    const whEventPend = document.getElementById('dm-webhook-event-pending').value.trim();
+    const whEventAppr = document.getElementById('dm-webhook-event-approved').value.trim();
+    const whLoaPend = document.getElementById('dm-webhook-loa-pending').value.trim();
+    const whLoaAppr = document.getElementById('dm-webhook-loa-approved').value.trim();
+    const whMdqraPend = document.getElementById('dm-webhook-mdqra-pending').value.trim();
+    const whMdqraAppr = document.getElementById('dm-webhook-mdqra-approved').value.trim();
     const whPend  = document.getElementById('dm-webhook-pending').value.trim();
     const whAppr  = document.getElementById('dm-webhook-approved').value.trim();
     const whLeg   = document.getElementById('dm-webhook-legacy').value.trim();
@@ -874,6 +959,15 @@
     const data = {
       name,
       short,
+      webhookUrlGeneral:     whGeneral,
+      webhookDutyPending:    whDutyPend,
+      webhookDutyApproved:   whDutyAppr,
+      webhookEventPending:   whEventPend,
+      webhookEventApproved:  whEventAppr,
+      webhookLoaPending:     whLoaPend,
+      webhookLoaApproved:    whLoaAppr,
+      webhookMdqraPending:   whMdqraPend,
+      webhookMdqraApproved:  whMdqraAppr,
       webhookUrl:          whLeg,
       webhookUrlPending:   whPend,
       webhookUrlApproved:  whAppr,

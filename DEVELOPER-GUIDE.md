@@ -73,6 +73,7 @@ Important fields (typical):
 - `username`, `email`, `rankId`, `rankName`, `permission_level`, `divisionId`, `divisionName`
 - Optional divisional rank: `divRankId`, `divRankName`, `mappedRankId` (maps division rank to main rank for permissions)
 - `mustChangePassword`, `isActive`
+- Optional `discordId`: Discord snowflake used for approval mentions (`<@id>`); stored as digits only
 - Optional `personnelOffices`: e.g. `ocnp`, `ocno` for staff roles
 
 ### 3.3 `requireAuth(options)` (`js/auth.js`)
@@ -127,7 +128,13 @@ Profile + authorization. Read/write rules enforce hierarchy (cannot assign rank 
 ### 5.2 `divisions/{divisionId}`
 
 - `name`, `short`, optional `isHeadquarters` (HQ division — special quota rules).
-- `webhookUrl`, `webhookUrlPending`, `webhookUrlApproved` — Discord integration.
+- Discord integration (webhooks). New routing supports a General catch‑all plus category webhooks, with legacy fallback:
+  - `webhookUrlGeneral`
+  - `webhookDutyPending`, `webhookDutyApproved`
+  - `webhookEventPending`, `webhookEventApproved`
+  - `webhookLoaPending`, `webhookLoaApproved`
+  - `webhookMdqraPending`, `webhookMdqraApproved`
+  - Legacy: `webhookUrl`, `webhookUrlPending`, `webhookUrlApproved`
 - `ranks[]` — division-specific rank objects (id, name, shortName, tier, mappedRankId, order).
 - `eventTypes[]` — list of allowed event types for that division (used by Activity Log + Quota policy builder). No global defaults.
 
@@ -242,7 +249,22 @@ Shown if user has `divisionId` and not `ndvl`: loads `fetchNetStatus`, renders s
 
 ## 10. Discord webhooks (`js/discord-webhooks.js`)
 
-Reads division document, chooses `webhookUrlPending` or `webhookUrlApproved`, falling back to legacy `webhookUrl`. Posts JSON `{ embeds: [...] }` via `fetch`. Failures are logged but non-fatal.
+Reads the division document, resolves target webhook URLs, then posts JSON via `fetch`. Failures are logged but non-fatal.
+
+Routing rules:
+
+- Always post to `webhookUrlGeneral` (if set) to keep an “archive” record in Discord.
+- Also post to the category webhook for the event, if set:
+  - Duty logs: `webhookDutyPending` / `webhookDutyApproved`
+  - Event logs: `webhookEventPending` / `webhookEventApproved`
+  - LOA requests: `webhookLoaPending` / `webhookLoaApproved`
+  - MDQRA requests: `webhookMdqraPending` / `webhookMdqraApproved`
+- If a category webhook is not set, fall back to legacy pending/approved (`webhookUrlPending` / `webhookUrlApproved`) and finally `webhookUrl`.
+- De-duplicate identical URLs so the same webhook isn’t posted twice.
+
+Mentions:
+
+- Some approved posts include a `content` string with Discord mentions (`<@discordId>`) for involved users.
 
 Embed builders cover: pending/approved/rejected logs, quota request pending/decided, and admin uses a custom embed for **Account Creation**.
 

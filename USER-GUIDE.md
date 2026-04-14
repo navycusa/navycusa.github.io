@@ -24,7 +24,7 @@ This guide explains **how to use the website** step by step. It is written for p
 - **Approved:** Accepted; it counts toward stats and (for events/duty) may count toward **quota** rules if your division uses them.
 - **Division:** Your primary command group in the portal (for example a specific unit). **Navy Divisionless (NDVL)** means you are not assigned to a primary division in the system.
 - **HQ / Headquarters:** A special division tier in the system; some features and quota rules work differently for HQ.
-  - **Rank note:** In this portal’s rank list, the lowest HQ rank label is **MCPO**. Some HQ-wide admin features still require **CNP+** access in the software.
+  - **Rank note:** **MCPO** is a divisional (Command) rank used for review permissions; **MCPON** is the lowest HQ rank below **CNP**.
 
 ### The address (URL)
 
@@ -254,7 +254,7 @@ If you hit **Set New Password** again after already changing it, the site may re
 
 ## Part G — Admin Panel (authorized users only)
 
-The **Admin Panel** appears only if you have access: usually **CNP+** full admin, or **OCNP/OCNO** staff with sufficient rank for **Navy Divisionless** personnel only.
+The **Admin Panel** appears only if you have access: **MCPO+** can access Log Review; **CNP+** have full admin. Some staff roles (OCNP/OCNO) may have additional NDVL-focused access depending on configuration.
 
 ### Tabs you might see
 
@@ -281,6 +281,7 @@ Hidden tabs simply do not apply to your role.
 4. **Division:** choose their primary division.
 5. **Divisional Rank** (optional): if your division has custom ranks in the system, you can pick one; permissions still follow the **mapped main rank**.
 6. **Personnel office** checkboxes (OCNP/OCNO): only for admins who may assign staff affiliations.
+7. **Discord ID** (optional): used to mention the member in Discord when their log is approved.
 7. **Account Active:** leave checked for a normal new account.
 8. **Save.**
 
@@ -331,7 +332,12 @@ For **MCPO+** who are not admiral-tier HQ:
 **Edit** a division:
 
 - **Name**, **short code**
-- **Discord webhooks:** separate URLs for **pending** vs **approved** notifications; optional **legacy** single webhook fills gaps
+- **Discord webhooks:** configure **General (archive catch‑all)** plus specific webhooks for:
+  - Duty Logs (Pending/Approved)
+  - Event Logs (Pending/Approved)
+  - LOA Requests (Pending/Approved)
+  - MDQRA Requests (Pending/Approved)
+  Legacy pending/approved/single fields are still supported as fallback.
 - **Division ranks** (if your rank allows): custom titles mapped to main ranks for display
 - **Event types** (if allowed): same idea as “My division” but in the modal
 

@@ -1,6 +1,9 @@
 // ============================================================
 // Client-side Discord webhooks (Spark / no Cloud Functions)
-// Division fields: webhookUrlPending, webhookUrlApproved, legacy webhookUrl
+// Division fields:
+// - New: webhookUrlGeneral, webhookDutyPending/Approved, webhookEventPending/Approved,
+//        webhookLoaPending/Approved, webhookMdqraPending/Approved
+// - Legacy: webhookUrlPending, webhookUrlApproved, webhookUrl
 // ============================================================
 
 (function (global) {
@@ -8,8 +11,55 @@
 
   const DEFAULT_FOOTER_TEXT = 'US Navy CUSA Portal • created by pPayday';
 
+  const WEBHOOK_KEYS = {
+    general: 'webhookUrlGeneral',
+    duty:   { pending: 'webhookDutyPending',   approved: 'webhookDutyApproved' },
+    event:  { pending: 'webhookEventPending',  approved: 'webhookEventApproved' },
+    loa:    { pending: 'webhookLoaPending',    approved: 'webhookLoaApproved' },
+    mdqra:  { pending: 'webhookMdqraPending',  approved: 'webhookMdqraApproved' },
+  };
+
   function defaultFooter() {
     return { text: DEFAULT_FOOTER_TEXT };
+  }
+
+  function cleanUrl(v) {
+    const s = String(v || '').trim();
+    return s ? s : null;
+  }
+
+  function legacyFallbackUrl(divData, status) {
+    if (!divData) return null;
+    const legacySingle = cleanUrl(divData.webhookUrl);
+    if (status === 'approved') return cleanUrl(divData.webhookUrlApproved) || legacySingle;
+    return cleanUrl(divData.webhookUrlPending) || legacySingle;
+  }
+
+  /**
+   * Resolve webhook targets for an event: include General (archive) + category.
+   * If category isn't set, fall back to legacy pending/approved/single.
+   * @param {object} divData
+   * @param {'duty'|'event'|'loa'|'mdqra'|'general'} category
+   * @param {'pending'|'approved'} status
+   * @returns {string[]} urls (deduped, ordered)
+   */
+  function webhookTargets(divData, category, status) {
+    if (!divData) return [];
+    const urls = [];
+
+    const general = cleanUrl(divData[WEBHOOK_KEYS.general]);
+    if (general) urls.push(general);
+
+    const catKeys = WEBHOOK_KEYS[category] || null;
+    const catKey = catKeys && typeof catKeys === 'object' ? catKeys[status] : null;
+    const catUrl = catKey ? cleanUrl(divData[catKey]) : null;
+    if (catUrl) urls.push(catUrl);
+    else {
+      const legacy = legacyFallbackUrl(divData, status);
+      if (legacy) urls.push(legacy);
+    }
+
+    return [...new Set(urls)];
   }
 
   function divisionDiscordUrls(divData) {
@@ -247,28 +297,46 @@
 
   /**
    * @param {firebase.firestore.Firestore} firestoreDb
-   * @param {'pending'|'approved'} channel
+   * @param {'pending'|'approved'|{category:'duty'|'event'|'loa'|'mdqra'|'general',status:'pending'|'approved'}} routeOrStatus
    */
-  async function postEmbed(firestoreDb, divisionId, channel, embed) {
+  async function postEmbed(firestoreDb, divisionId, routeOrStatus, embed, opts) {
     if (!divisionId || !firestoreDb) return;
     try {
       const snap = await firestoreDb.collection('divisions').doc(divisionId).get();
       if (!snap.exists) return;
-      const urls = divisionDiscordUrls(snap.data());
-      const url = channel === 'approved' ? urls.approved : urls.pending;
-      if (!url) return;
+      const divData = snap.data();
+
+      // Back-compat: old calls pass 'pending'|'approved'.
+      // Route legacy posts through the "general" category so new general+legacy fallback still work.
+      const route = (typeof routeOrStatus === 'string')
+        ? { category: 'general', status: routeOrStatus }
+        : routeOrStatus;
+
+      const status = route && route.status === 'approved' ? 'approved' : 'pending';
+      const category = (route && route.category) ? route.category : 'general';
+      const targets = webhookTargets(divData, category, status);
+      if (!targets.length) return;
+
       const payload = {
+        ...(opts && opts.content ? { content: String(opts.content) } : {}),
         embeds: [{
           ...embed,
           footer: embed.footer || defaultFooter(),
           timestamp: embed.timestamp || new Date().toISOString(),
         }],
       };
-      await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+
+      for (const url of targets) {
+        try {
+          await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        } catch (inner) {
+          console.warn('Discord webhook failed (non-fatal):', inner.message || inner);
+        }
+      }
     } catch (e) {
       console.warn('Discord webhook failed (non-fatal):', e.message || e);
     }
@@ -276,6 +344,7 @@
 
   global.DiscordWebhooks = {
     divisionDiscordUrls,
+    webhookTargets,
     postEmbed,
     quotaRequestDisplay,
     buildLogPendingEmbed,

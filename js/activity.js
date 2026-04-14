@@ -237,7 +237,7 @@
       await auditLog('log.create', 'log', logRef.id, { type: 'duty', minutes, divisionId: logDivId });
 
       if (window.DiscordWebhooks) {
-        await window.DiscordWebhooks.postEmbed(db, logDivId, 'pending',
+        await window.DiscordWebhooks.postEmbed(db, logDivId, { category: 'duty', status: 'pending' },
           window.DiscordWebhooks.buildLogPendingEmbed({
             type: 'duty',
             authorUsername: u.username,
@@ -342,7 +342,7 @@
       await auditLog('log.create', 'log', logRef.id, { type: 'event', evtType, divisionId: logDivId });
 
       if (window.DiscordWebhooks) {
-        await window.DiscordWebhooks.postEmbed(db, logDivId, 'pending',
+        await window.DiscordWebhooks.postEmbed(db, logDivId, { category: 'event', status: 'pending' },
           window.DiscordWebhooks.buildLogPendingEmbed({
             type: 'event',
             authorUsername: u.username,

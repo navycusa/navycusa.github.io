@@ -13,7 +13,18 @@
 const SUPABASE_URL     = 'https://nxafnqqiqfnqyxvlzybl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_ZMsmqSEhOWvHrMWRO0M4PA_cqJaIIde';
 
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Supabase JS tries to use browser storage (localStorage/IndexedDB) for auth session
+// persistence by default. On some browsers (notably Edge with Tracking Prevention),
+// third-party scripts (like unpkg CDN) are blocked from storage access, which
+// produces noisy console warnings. We only use Supabase for anonymous Storage
+// uploads/reads, so we disable session persistence/refresh entirely.
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});
 
 // ── Upload a proof image and return its public URL ───────────
 async function uploadProofImage(file, uid) {

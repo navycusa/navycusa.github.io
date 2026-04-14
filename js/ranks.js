@@ -5,7 +5,12 @@
 const RANKS = [
   // ── HQ ──────────────────────────────────────────────────────────────────────
   { id: 'administrator',    name: 'Administrator',                  short: 'ADMIN',      cat: 'HQ',      pl: 100 },
-  { id: 'secnav',           name: 'Secretary of the Navy',          short: 'SecNav',     cat: 'HQ',      pl: 90  },
+  { id: 'chairman',         name: 'Chairman',                       short: 'CHMN',       cat: 'HQ',      pl: 99  },
+  { id: 'ownership_team',   name: 'Ownership Team',                 short: 'OWN',        cat: 'HQ',      pl: 98  },
+  { id: 'president_us',     name: 'President of the United States', short: 'POTUS',      cat: 'HQ',      pl: 97  },
+  { id: 'vice_president_us',name: 'Vice President of the United States', short: 'VPOTUS', cat: 'HQ',     pl: 96  },
+  { id: 'secdef',           name: 'Secretary of Defense',            short: 'SecDef',     cat: 'HQ',      pl: 95  },
+  { id: 'secnav',           name: 'Secretary of the Navy',           short: 'SecNav',     cat: 'HQ',      pl: 90  },
   { id: 'undersecnav',      name: 'Undersecretary of the Navy',     short: 'UnderSecNav',cat: 'HQ',      pl: 85  },
   { id: 'asst_secnav',      name: 'Assistant to the Secretary',     short: 'Asst SecNav',cat: 'HQ',      pl: 80  },
   { id: 'ncis_dir',         name: 'NCIS Director',                  short: 'NCIS Dir',   cat: 'HQ',      pl: 75  },
@@ -13,13 +18,14 @@ const RANKS = [
   { id: 'cno',              name: 'Chief of Naval Operations',      short: 'CNO',        cat: 'HQ',      pl: 70  },
   { id: 'vcno',             name: 'Vice Chief of Naval Operations',  short: 'VCNO',       cat: 'HQ',      pl: 65  },
   { id: 'cnp',              name: 'Chief of Naval Personnel',       short: 'CNP',        cat: 'HQ',      pl: 60  },
-  { id: 'mcpo',             name: 'Master Chief Petty Officer',     short: 'MCPO',       cat: 'HQ',      pl: 42  },
+  { id: 'mcpon',            name: 'Master Chief Petty Officer of the Navy', short: 'MCPON', cat: 'HQ',  pl: 58  },
   // ── Command / Mid ───────────────────────────────────────────────────────────
   { id: 'ncis_midcom',      name: 'NCIS MIDCOM',                    short: 'NCIS MIDCOM',cat: 'Command', pl: 55  },
   { id: 'admiral',          name: 'Admiral',                        short: 'ADM',        cat: 'Command', pl: 50  },
   { id: 'vice_admiral',     name: 'Vice Admiral',                   short: 'VADM',       cat: 'Command', pl: 48  },
   { id: 'rear_admiral_u',   name: 'Rear Admiral (Upper Half)',       short: 'RADM',       cat: 'Command', pl: 46  },
   { id: 'rear_admiral_l',   name: 'Rear Admiral (Lower Half)',       short: 'RDML',       cat: 'Command', pl: 44  },
+  { id: 'mcpo',             name: 'Master Chief Petty Officer',      short: 'MCPO',       cat: 'Command', pl: 42  },
   { id: 'ncis_agent',       name: 'NCIS',                           short: 'NCIS',       cat: 'Command', pl: 40  },
   { id: 'captain',          name: 'Captain',                        short: 'CAPT',       cat: 'Command', pl: 38  },
   { id: 'commander',        name: 'Commander',                      short: 'CDR',        cat: 'Command', pl: 36  },
@@ -99,18 +105,21 @@ function hasPerm(userPL, required) {
  * @param {boolean} [userDivisionIsHQ] caller's division has isHeadquarters (from /divisions); defaults to divisionId === HQ_DIVISION_ID only.
  */
 function canManageDivisionQuota(user, divisionId, divisionIsHQ, userDivisionIsHQ) {
-  if (!divisionId) return false;
+  if (!divisionId || !user) return false;
   if (user.rankId === 'administrator') return true;
-  if (divisionIsHQ) {
-    return user.permission_level >= PERM.QUOTA_HQ_AUTHORITY || user.rankId === 'secnav';
-  }
+
+  const isSecNavPlus = user.permission_level >= PERM.QUOTA_HQ_AUTHORITY;
+
+  // Target HQ division: SecNav+ only.
+  if (divisionIsHQ) return isSecNavPlus;
+
+  // Target non-HQ division:
+  if (isSecNavPlus) return true;
+  // HQ staff (CNP+) can manage all non-HQ divisions.
+  if (user.permission_level >= PERM.ADMIN_PANEL) return true;
+  // Divisional command can manage their own division only.
   if (user.permission_level < PERM.QUOTA_DIV_COMMAND) return false;
-  if (user.permission_level >= PERM.QUOTA_HQ_AUTHORITY || user.rankId === 'secnav') return true;
-  if (user.divisionId === divisionId) return true;
-  const uhq = userDivisionIsHQ !== undefined
-    ? userDivisionIsHQ
-    : user.divisionId === HQ_DIVISION_ID;
-  return uhq && user.rankId !== 'secnav';
+  return user.divisionId === divisionId;
 }
 
 /** CNP–Under SecNav: may view pending quota requests for every non-Headquarters division (not SecNav rank tier). */
@@ -134,6 +143,8 @@ function hasPersonnelOfficeStaff(user) {
 function canAccessAdminPanel(user) {
   if (!user) return false;
   if (user.permission_level >= PERM.ADMIN_PANEL) return true;
+  // MCPO+ can access Admin Panel for log review / limited tabs.
+  if (user.permission_level >= PERM.APPROVE_LOGS) return true;
   return hasPersonnelOfficeStaff(user) && user.permission_level >= PERM.APPROVE_LOGS;
 }
 
