@@ -381,6 +381,16 @@
     const req = snap.data();
     if (req.status !== 'pending') throw new Error('Request is not pending.');
 
+    // Prevent self-approval: requester cannot approve their own request unless SecNav+ (or Administrator).
+    if (approve && req.requesterUid && caller && req.requesterUid === caller.uid) {
+      const isSecNavPlus = caller.rankId === 'administrator'
+        || caller.permission_level >= PERM.QUOTA_HQ_AUTHORITY
+        || caller.rankId === 'secnav';
+      if (!isSecNavPlus) {
+        throw new Error('You cannot approve your own QUOTA request. A higher authority must approve it.');
+      }
+    }
+
     const status = approve ? 'approved' : 'rejected';
     await ref.update({
       status,

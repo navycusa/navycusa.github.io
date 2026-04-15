@@ -441,6 +441,62 @@
   // ══════════════════════════════════════════════════════════
   // TAB: Log Review  (MCPO+)
   // ══════════════════════════════════════════════════════════
+  const reviewFilterWrap = document.getElementById('review-division-filter-wrap');
+  const reviewFilterSel = document.getElementById('review-division-filter');
+  const reviewRefreshBtn = document.getElementById('review-refresh-btn');
+
+  let _reviewDivisions = [];
+  let _reviewDivisionSelection = '__all_non_hq__';
+
+  function canSeeHqLogsInReview(user) {
+    // "HQ tab" visibility is SecNav+ only (or Administrator).
+    return !!user && (user.rankId === 'administrator' || user.permission_level >= PERM.QUOTA_HQ_AUTHORITY || user.rankId === 'secnav');
+  }
+
+  function isDivisionHQ(divisionId, divData) {
+    if (!divisionId) return false;
+    if (divisionId === HQ_DIVISION_ID) return true;
+    return !!(divData && divData.isHeadquarters === true);
+  }
+
+  async function loadReviewDivisionsIfNeeded() {
+    if (!isHQPersonnel(u)) return;
+    try {
+      const snap = await db.collection('divisions').orderBy('name').get();
+      _reviewDivisions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (_) {
+      _reviewDivisions = DEFAULT_DIVISIONS;
+    }
+  }
+
+  function bindReviewDivisionFilter() {
+    if (!reviewFilterWrap || !reviewFilterSel) return;
+    if (!isHQPersonnel(u)) return;
+
+    reviewFilterWrap.classList.remove('hidden');
+
+    const allowHq = canSeeHqLogsInReview(u);
+    const nonHq = (_reviewDivisions || []).filter((d) => d.id && d.id !== NDVL_DIVISION_ID && !isDivisionHQ(d.id, d));
+    const hqDiv = (_reviewDivisions || []).find((d) => d.id === HQ_DIVISION_ID || isDivisionHQ(d.id, d)) || null;
+
+    reviewFilterSel.innerHTML =
+      `<option value="__all_non_hq__">— All divisions (except Headquarters) —</option>` +
+      nonHq.map((d) => `<option value="${escHtml(d.id)}">${escHtml(d.name || d.id)}</option>`).join('') +
+      (allowHq && hqDiv ? `<option value="${escHtml(hqDiv.id)}">${escHtml((hqDiv.name || 'Headquarters') + ' (HQ)')}</option>` : '');
+
+    _reviewDivisionSelection = reviewFilterSel.value || '__all_non_hq__';
+
+    reviewFilterSel.addEventListener('change', async () => {
+      _reviewDivisionSelection = reviewFilterSel.value || '__all_non_hq__';
+      await loadPendingLogs();
+    });
+    if (reviewRefreshBtn) {
+      reviewRefreshBtn.addEventListener('click', loadPendingLogs);
+    }
+  }
+
+  await loadReviewDivisionsIfNeeded();
+  bindReviewDivisionFilter();
   await loadPendingLogs();
 
   async function discordMentionsForUids(uids) {
@@ -464,40 +520,96 @@
     const tbody = document.getElementById('review-body');
     tbody.innerHTML = loadingRow(6);
     try {
-      let query = db.collection('logs').where('status', '==', 'pending').orderBy('createdAt', 'asc');
+      // Non-HQ reviewers: only their division.
       if (!isHQPersonnel(u) && u.divisionId) {
-        query = db.collection('logs')
+        const snap = await db.collection('logs')
           .where('divisionId', '==', u.divisionId)
           .where('status', '==', 'pending')
-          .orderBy('createdAt', 'asc');
+          .orderBy('createdAt', 'asc')
+          .limit(50)
+          .get();
+        if (snap.empty) { tbody.innerHTML = emptyRow(6, '✅', 'No pending logs.'); return; }
+        tbody.innerHTML = snap.docs.map(renderPendingLogRow).join('');
+        return;
       }
-      const snap = await query.limit(50).get();
-      if (snap.empty) { tbody.innerHTML = emptyRow(6, '✅', 'No pending logs.'); return; }
-      tbody.innerHTML = snap.docs.map(doc => {
-        const d = doc.data();
-        const detail = d.type === 'duty'
-          ? `${d.durationMinutes} min`
-          : (d.eventType === 'Custom Event' ? escHtml(d.customEventName || '') : escHtml(d.eventType || ''));
-        const proofLinks = [
-          d.proofImageUrl ? `<a href="${escHtml(d.proofImageUrl)}" target="_blank" rel="noopener">🖼 Image</a>` : '',
-          d.discordLink   ? `<a href="${escHtml(d.discordLink)}"   target="_blank" rel="noopener">Discord ↗</a>` : '',
-        ].filter(Boolean).join(' · ') || '—';
-        return `<tr id="row-${doc.id}">
-          <td>${escHtml(d.authorUsername || '—')}</td>
-          <td>${typeBadge(d.type)}</td>
-          <td>${detail}</td>
-          <td>${escHtml(d.divisionName || '—')}</td>
-          <td>${proofLinks}</td>
-          <td>
-            <button class="btn btn-sm btn-success" onclick="reviewLog('${doc.id}','approved')">Approve</button>
-            <button class="btn btn-sm btn-danger"  onclick="reviewLog('${doc.id}','rejected')" style="margin-left:4px">Reject</button>
-          </td>
-        </tr>`;
-      }).join('');
+
+      // HQ staff (CNP+): division dropdown. HQ division is SecNav+ only.
+      if (isHQPersonnel(u)) {
+        const allowHq = canSeeHqLogsInReview(u);
+        const sel = _reviewDivisionSelection || '__all_non_hq__';
+
+        if (sel && sel !== '__all_non_hq__') {
+          if (isDivisionHQ(sel) && !allowHq) {
+            tbody.innerHTML = emptyRow(6, '🔒', 'Headquarters logs are visible to SecNav+ only.');
+            return;
+          }
+          const snap = await db.collection('logs')
+            .where('divisionId', '==', sel)
+            .where('status', '==', 'pending')
+            .orderBy('createdAt', 'asc')
+            .limit(50)
+            .get();
+          if (snap.empty) { tbody.innerHTML = emptyRow(6, '✅', 'No pending logs.'); return; }
+          tbody.innerHTML = snap.docs.map(renderPendingLogRow).join('');
+          return;
+        }
+
+        // "__all_non_hq__" selection: merge per-division queries to avoid accidentally including HQ.
+        const nonHqDivIds = (_reviewDivisions || [])
+          .filter((d) => d && d.id && d.id !== NDVL_DIVISION_ID && !isDivisionHQ(d.id, d))
+          .map((d) => d.id);
+
+        if (!nonHqDivIds.length) {
+          tbody.innerHTML = emptyRow(6, '✅', 'No divisions available.');
+          return;
+        }
+
+        const snaps = await Promise.all(
+          nonHqDivIds.map((divisionId) => db.collection('logs')
+            .where('divisionId', '==', divisionId)
+            .where('status', '==', 'pending')
+            .orderBy('createdAt', 'asc')
+            .limit(50)
+            .get()),
+        );
+        const merged = [];
+        snaps.forEach((s) => s.docs.forEach((d) => merged.push(d)));
+        if (!merged.length) { tbody.innerHTML = emptyRow(6, '✅', 'No pending logs.'); return; }
+        merged.sort((a, b) => {
+          const ta = a.data().createdAt && a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0;
+          const tb = b.data().createdAt && b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0;
+          return ta - tb;
+        });
+        tbody.innerHTML = merged.slice(0, 50).map(renderPendingLogRow).join('');
+        return;
+      }
+      tbody.innerHTML = emptyRow(6, '⚠️', 'Unable to load pending logs.');
     } catch (e) {
       console.error('loadPendingLogs failed:', e);
       tbody.innerHTML = errorRow(6, e.message);
     }
+  }
+
+  function renderPendingLogRow(doc) {
+    const d = doc.data();
+    const detail = d.type === 'duty'
+      ? `${d.durationMinutes} min`
+      : (d.eventType === 'Custom Event' ? escHtml(d.customEventName || '') : escHtml(d.eventType || ''));
+    const proofLinks = [
+      d.proofImageUrl ? `<a href="${escHtml(d.proofImageUrl)}" target="_blank" rel="noopener">🖼 Image</a>` : '',
+      d.discordLink   ? `<a href="${escHtml(d.discordLink)}"   target="_blank" rel="noopener">Discord ↗</a>` : '',
+    ].filter(Boolean).join(' · ') || '—';
+    return `<tr id="row-${doc.id}">
+      <td>${escHtml(d.authorUsername || '—')}</td>
+      <td>${typeBadge(d.type)}</td>
+      <td>${detail}</td>
+      <td>${escHtml(d.divisionName || '—')}</td>
+      <td>${proofLinks}</td>
+      <td>
+        <button class="btn btn-sm btn-success" onclick="reviewLog('${doc.id}','approved')">Approve</button>
+        <button class="btn btn-sm btn-danger"  onclick="reviewLog('${doc.id}','rejected')" style="margin-left:4px">Reject</button>
+      </td>
+    </tr>`;
   }
 
   window.reviewLog = async function (logId, decision) {

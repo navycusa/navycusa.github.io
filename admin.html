@@ -124,6 +124,21 @@
           Approve or reject each entry below.
         </div>
 
+        <div class="form-row hidden" id="review-division-filter-wrap" style="gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <div class="form-group" style="min-width:260px;margin:0">
+            <label for="review-division-filter">Division</label>
+            <select id="review-division-filter" class="form-control">
+              <option value="__all_non_hq__">— All divisions (except Headquarters) —</option>
+            </select>
+            <div class="form-text">
+              Headquarters staff may review any division. Headquarters logs are restricted to SecNav+.
+            </div>
+          </div>
+          <div class="form-group" style="margin:0;align-self:flex-end">
+            <button type="button" id="review-refresh-btn" class="btn btn-sm btn-secondary">↻ Refresh</button>
+          </div>
+        </div>
+
         <div class="table-wrapper">
           <table>
             <thead>

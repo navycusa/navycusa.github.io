@@ -47,14 +47,20 @@
     if (!divData) return [];
     const urls = [];
 
-    const general = cleanUrl(divData[WEBHOOK_KEYS.general]);
-    if (general) urls.push(general);
-
     const catKeys = WEBHOOK_KEYS[category] || null;
     const catKey = catKeys && typeof catKeys === 'object' ? catKeys[status] : null;
     const catUrl = catKey ? cleanUrl(divData[catKey]) : null;
-    if (catUrl) urls.push(catUrl);
-    else {
+
+    // "General" should be a catch-all ONLY for categories that do not have a specific webhook configured.
+    // For duty/event/LOA/MDQRA: if a specific webhook exists, do NOT also send to General.
+    const general = cleanUrl(divData[WEBHOOK_KEYS.general]);
+    const isSpecificCategory = category === 'duty' || category === 'event' || category === 'loa' || category === 'mdqra';
+    const includeGeneral = category === 'general' || !isSpecificCategory || !catUrl;
+    if (general && includeGeneral) urls.push(general);
+
+    if (catUrl) {
+      urls.push(catUrl);
+    } else {
       const legacy = legacyFallbackUrl(divData, status);
       if (legacy) urls.push(legacy);
     }
