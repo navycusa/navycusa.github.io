@@ -111,9 +111,10 @@
       color:       isEvent ? 0x9b59b6 : 0x3498db,
       description: `A new ${log.type} log has been submitted and is **pending approval**.`,
       fields:      [
-        { name: 'Personnel', value: String(log.authorUsername || '—'), inline: true },
-        { name: 'Rank',      value: String(log.authorRankName || '—'), inline: true },
-        { name: 'Division',  value: String(log.divisionName  || '—'), inline: true },
+        { name: 'Submitted by', value: String(log.authorUsername || '—'), inline: true },
+        { name: 'Approved by',  value: 'Pending approval', inline: true },
+        { name: 'Rank',         value: String(log.authorRankName || '—'), inline: true },
+        { name: 'Division',     value: String(log.divisionName  || '—'), inline: true },
       ],
       footer: defaultFooter(),
       timestamp: new Date().toISOString(),
@@ -140,8 +141,9 @@
       title:  isDuty ? '✅ Duty Log Approved' : '✅ Event Log Approved',
       color:  0x2ecc71,
       fields: [
-        { name: 'Personnel', value: String(log.authorUsername || '—'), inline: true },
-        { name: 'Division',  value: String(log.divisionName  || '—'), inline: true },
+        { name: 'Submitted by', value: String(log.authorUsername || '—'), inline: true },
+        { name: 'Approved by',  value: String(log.reviewerUsername || '—'), inline: true },
+        { name: 'Division',     value: String(log.divisionName  || '—'), inline: true },
         { name: 'Details', value: isDuty
           ? `${log.durationMinutes || '—'} min duty on ${dateStr}`
           : `${detail || '—'} on ${dateStr}`,
@@ -165,9 +167,10 @@
       color:  0xe74c3c,
       description: 'A pending log was **rejected**.',
       fields: [
-        { name: 'Personnel', value: String(log.authorUsername || '—'), inline: true },
-        { name: 'Division',  value: String(log.divisionName  || '—'), inline: true },
-        { name: 'Reviewer',  value: String(log.reviewerUsername || '—'), inline: true },
+        { name: 'Submitted by', value: String(log.authorUsername || '—'), inline: true },
+        { name: 'Approved by',  value: '—', inline: true },
+        { name: 'Rejected by',  value: String(log.reviewerUsername || '—'), inline: true },
+        { name: 'Division',     value: String(log.divisionName  || '—'), inline: true },
       ],
       footer:    defaultFooter(),
       timestamp: new Date().toISOString(),
@@ -180,9 +183,10 @@
     const div = divisionName || req.divisionId || '—';
     const disp = quotaRequestDisplay(req.requestType);
     const fields = [
-      { name: 'Requester', value: String(req.requesterUsername || '—'), inline: true },
-      { name: 'Division',  value: String(div),                           inline: true },
-      { name: 'Type',      value: disp.kindLabel,                        inline: true },
+      { name: 'Submitted by', value: String(req.requesterUsername || '—'), inline: true },
+      { name: 'Approved by',  value: 'Pending approval', inline: true },
+      { name: 'Division',     value: String(div),                           inline: true },
+      { name: 'Type',         value: disp.kindLabel,                        inline: true },
     ];
     if (req.requestType === 'MDQRA') {
       fields.push({ name: disp.detailLabel, value: `${req.reductionPercent}%`, inline: true });
@@ -206,15 +210,16 @@
     const ok = approved;
     const disp = quotaRequestDisplay(req.requestType);
     const fields = [
-      { name: 'Requester', value: String(req.requesterUsername || '—'), inline: true },
-      { name: 'Division',  value: String(div),                           inline: true },
-      { name: 'Type',      value: disp.kindLabel,                        inline: true },
+      { name: 'Submitted by', value: String(req.requesterUsername || '—'), inline: true },
+      { name: 'Approved by',  value: ok ? String(decider || '—') : '—', inline: true },
+      { name: 'Division',     value: String(div),                           inline: true },
+      { name: 'Type',         value: disp.kindLabel,                        inline: true },
     ];
     if (req.requestType === 'MDQRA') fields.push({ name: disp.detailLabel, value: `${req.reductionPercent}%`, inline: true });
     if (req.requestType === 'LOA') {
       fields.push({ name: disp.detailLabel, value: `${req.loaStart || '—'} → ${req.loaEnd || '—'}`, inline: false });
     }
-    fields.push({ name: 'Decided by', value: String(decider || '—'), inline: true });
+    if (!ok) fields.push({ name: 'Rejected by', value: String(decider || '—'), inline: true });
     if (decisionNotes) fields.push({ name: 'Notes', value: String(decisionNotes).slice(0, 1024), inline: false });
     return {
       title:       ok ? `✅ ${disp.kindLabel} approved` : `❌ ${disp.kindLabel} rejected`,
@@ -236,7 +241,11 @@
       { name: 'Type', value: t || '—', inline: true },
     ];
     const who = relief.requesterUsername || relief.requesterUid || relief.userId || '—';
-    fields.push({ name: 'Personnel', value: String(who), inline: true });
+    const approverRelief = relief.decidedByUsername || relief.decidedBy || null;
+    fields.push(
+      { name: 'Submitted by', value: String(who), inline: true },
+      { name: 'Approved by', value: approverRelief ? String(approverRelief) : '— (not stored on this record)', inline: true },
+    );
 
     if (t === 'LOA') {
       const s = relief.loaStart || relief.startDate || '—';
@@ -271,7 +280,11 @@
       { name: 'Type', value: t || '—', inline: true },
     ];
     const who = relief.requesterUsername || relief.requesterUid || relief.userId || '—';
-    fields.push({ name: 'Personnel', value: String(who), inline: true });
+    const approverReliefDel = relief.decidedByUsername || relief.decidedBy || null;
+    fields.push(
+      { name: 'Submitted by', value: String(who), inline: true },
+      { name: 'Approved by', value: approverReliefDel ? String(approverReliefDel) : '— (not stored on this record)', inline: true },
+    );
 
     if (t === 'LOA') {
       const s = relief.loaStart || relief.startDate || '—';

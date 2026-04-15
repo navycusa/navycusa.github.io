@@ -416,9 +416,11 @@
             color:       0x3498db,
             description: `**${username}** was created (temporary password on first login).`,
             fields: [
-              { name: 'Rank',       value: rankObj.name,   inline: true },
-              { name: 'Division',   value: divName,        inline: true },
-              { name: 'Created by', value: u.username || '—', inline: true },
+              { name: 'Submitted by', value: u.username || '—', inline: true },
+              { name: 'Approved by',  value: '— (not applicable)', inline: true },
+              { name: 'Rank',         value: rankObj.name,   inline: true },
+              { name: 'Division',     value: divName,        inline: true },
+              { name: 'New account',  value: username,       inline: true },
             ],
             footer:      { text: 'US Navy CUSA Portal • created by pPayday' },
             timestamp:   new Date().toISOString(),
@@ -525,7 +527,7 @@
             db,
             logData.divisionId,
             { category, status: 'approved' },
-            window.DiscordWebhooks.buildLogApprovedEmbed(logData),
+            window.DiscordWebhooks.buildLogApprovedEmbed({ ...logData, reviewerUsername: u.username }),
             content ? { content } : undefined,
           );
         }
