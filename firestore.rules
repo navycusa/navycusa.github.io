@@ -49,6 +49,12 @@ service cloud.firestore {
       return did == 'hq' || divisionHQFlag(did);
     }
 
+    // Quota pipeline treats ONLY the canonical 'hq' division id as HQ.
+    // This prevents accidental lockouts if another division doc is mis-flagged.
+    function quotaDivisionIsHQ(did) {
+      return did == 'hq';
+    }
+
     // OCNP / OCNO — additional affiliation on user doc (list of string ids)
     function isPersonnelOfficeStaff() {
       return authed() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
@@ -74,16 +80,40 @@ service cloud.firestore {
       return divId() != '' && (divId() == 'hq' || divisionHQFlag(divId()));
     }
 
+    // Caller holds an HQ-category rankId (per js/ranks.js), even if not in HQ division.
+    function isHQRank() {
+      return authed() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && selfDoc().get('rankId', '') in [
+          'administrator',
+          'chairman',
+          'ownership_team',
+          'president_us',
+          'vice_president_us',
+          'secdef',
+          'secnav',
+          'undersecnav',
+          'asst_secnav',
+          'ncis_dir',
+          'ncis_hicom',
+          'cno',
+          'vcno',
+          'cnp',
+          'mcpon'
+        ];
+    }
+
     // Administrator: all. HQ division target: SecNav+ only. Else: RDML+ own div, SecNav+, or HQ (non-SecNav) cross-division.
     function canManageQuotaForDivision(did) {
       return did != '' && did != 'ndvl' && (
-        quotaIsAdministrator()
-        || (divisionHQFlag(did) && (pl() >= 90 || selfDoc().get('rankId', '') == 'secnav'))
-        || (!divisionHQFlag(did) && pl() >= 44 && (
+        // Headquarters division requests can be accepted by SECNAV only.
+        (quotaDivisionIsHQ(did) && selfDoc().get('rankId', '') == 'secnav')
+        // Non-HQ division requests:
+        || quotaIsAdministrator()
+        || (!quotaDivisionIsHQ(did) && pl() >= 44 && (
           divId() == did
-          || pl() >= 90
           || selfDoc().get('rankId', '') == 'secnav'
-          || (quotaUserDivisionIsHQ() && selfDoc().get('rankId', '') != 'secnav')
+          || pl() >= 90
+          || ((quotaUserDivisionIsHQ() || isHQRank()) && selfDoc().get('rankId', '') != 'secnav')
         ))
       );
     }
@@ -101,14 +131,14 @@ service cloud.firestore {
     // CNP through Under SecNav: read non–Headquarters requests from any division (not HQ quota pipeline)
     function quotaCanReadNonHQQuotaRequestGlobally() {
       let rid = quotaRequestDivisionId();
-      return rid != '' && pl() >= 60 && pl() < 90 && !divisionHQFlag(rid);
+      return rid != '' && pl() >= 60 && pl() < 90 && !quotaDivisionIsHQ(rid);
     }
 
     // RDML+ in own division; if that division is HQ, SecNav+ only (same as manage policy)
     function quotaCanReadOwnDivisionQuotaRequest() {
       return pl() >= 44 && divId() != ''
         && quotaRequestDivisionId() == divId()
-        && (!divisionHQFlag(divId()) || pl() >= 90 || selfDoc().get('rankId', '') == 'secnav');
+        && (!quotaDivisionIsHQ(divId()) || pl() >= 90 || selfDoc().get('rankId', '') == 'secnav');
     }
 
     // ── /users/{uid} ─────────────────────────────────────────
