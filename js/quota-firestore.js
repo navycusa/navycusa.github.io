@@ -276,7 +276,14 @@
       const t = String(reqLike && reqLike.requestType || '').toUpperCase();
       const category = t === 'LOA' ? 'loa' : (t === 'MDQRA' ? 'mdqra' : 'general');
       await DW.postEmbed(db, divisionId, { category, status: 'pending' },
-        DW.buildQuotaRequestPendingEmbed(reqLike, divName));
+        DW.buildQuotaRequestPendingEmbed(reqLike, divName),
+        {
+          mentions: {
+            requesterUid: reqLike && reqLike.requesterUid,
+            requesterUsername: reqLike && reqLike.requesterUsername,
+            approverPending: true,
+          },
+        });
     } catch (e) {
       console.warn('Quota request Discord notify failed (non-fatal):', e.message || e);
     }
@@ -298,7 +305,15 @@
       const category = t === 'LOA' ? 'loa' : (t === 'MDQRA' ? 'mdqra' : 'general');
       // Route all "decided" notifications to the decided/approved bucket.
       await DW.postEmbed(db, req.divisionId, { category, status: 'approved' },
-        DW.buildQuotaRequestDecidedEmbed(merged, divName, approve, decisionNotes || null, caller.username));
+        DW.buildQuotaRequestDecidedEmbed(merged, divName, approve, decisionNotes || null, caller.username),
+        {
+          mentions: {
+            requesterUid: req && req.requesterUid,
+            requesterUsername: req && req.requesterUsername,
+            approverUid: caller && caller.uid,
+            approverUsername: caller && caller.username,
+          },
+        });
     } catch (e) {
       console.warn('Quota decision Discord notify failed (non-fatal):', e.message || e);
     }
@@ -313,7 +328,14 @@
       const embed = action === 'revoked'
         ? DW.buildQuotaReliefRevokedEmbed(relief, divName, caller && caller.username)
         : DW.buildQuotaReliefDeletedEmbed(relief, divName, caller && caller.username);
-      await DW.postEmbed(db, divisionId, { category: 'general', status: 'approved' }, embed);
+      await DW.postEmbed(db, divisionId, { category: 'general', status: 'approved' }, embed, {
+        mentions: {
+          requesterUid: relief && (relief.requesterUid || relief.userId || null),
+          requesterUsername: relief && relief.requesterUsername,
+          approverUid: relief && (relief.decidedByUid || relief.decidedBy || null),
+          approverUsername: relief && relief.decidedByUsername,
+        },
+      });
     } catch (e) {
       console.warn('Quota relief Discord notify failed (non-fatal):', e.message || e);
     }

@@ -245,7 +245,14 @@
             divisionName: logDivName,
             durationMinutes: minutes,
             discordLink: proof.discordLink,
-          }));
+          }),
+          {
+            mentions: {
+              requesterUid: u.uid,
+              requesterUsername: u.username,
+              approverPending: true,
+            },
+          });
       }
 
       showAlert('duty-alert', 'success', '&#10003; Duty log submitted and is pending approval.');
@@ -352,7 +359,14 @@
             customEventName: evtType === 'Custom Event' ? customName : null,
             participants,
             discordLink: proof.discordLink,
-          }));
+          }),
+          {
+            mentions: {
+              requesterUid: u.uid,
+              requesterUsername: u.username,
+              approverPending: true,
+            },
+          });
       }
 
       showAlert('event-alert', 'success', '&#10003; Event log submitted and is pending approval.');

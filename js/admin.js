@@ -424,6 +424,12 @@
             ],
             footer:      { text: 'US Navy CUSA Portal • created by pPayday' },
             timestamp:   new Date().toISOString(),
+          }, {
+            mentions: {
+              requesterUid: u.uid,
+              requesterUsername: u.username,
+              approverLabel: '— (not applicable)',
+            },
           });
         }
         showAlert('user-modal-alert', 'success',
@@ -498,23 +504,6 @@
   await loadReviewDivisionsIfNeeded();
   bindReviewDivisionFilter();
   await loadPendingLogs();
-
-  async function discordMentionsForUids(uids) {
-    const clean = [...new Set((uids || []).filter(Boolean))];
-    if (!clean.length) return '';
-    try {
-      const snaps = await Promise.all(clean.map((id) => db.collection('users').doc(id).get()));
-      const ids = snaps
-        .filter((s) => s.exists)
-        .map((s) => s.data().discordId)
-        .map((x) => String(x || '').trim())
-        .filter((x) => /^\d{15,25}$/.test(x));
-      const uniq = [...new Set(ids)];
-      return uniq.length ? uniq.map((id) => `<@${id}>`).join(' ') : '';
-    } catch (_) {
-      return '';
-    }
-  }
 
   async function loadPendingLogs() {
     const tbody = document.getElementById('review-body');
@@ -630,17 +619,19 @@
       if (decision === 'approved' && logData) {
         if (window.DiscordWebhooks && logData.divisionId) {
           const category = logData.type === 'event' ? 'event' : 'duty';
-          const mentionUids = [
-            logData.authorUid,
-            ...(Array.isArray(logData.attendeeUids) ? logData.attendeeUids : []),
-          ];
-          const content = await discordMentionsForUids(mentionUids);
           await window.DiscordWebhooks.postEmbed(
             db,
             logData.divisionId,
             { category, status: 'approved' },
             window.DiscordWebhooks.buildLogApprovedEmbed({ ...logData, reviewerUsername: u.username }),
-            content ? { content } : undefined,
+            {
+              mentions: {
+                requesterUid: logData.authorUid,
+                requesterUsername: logData.authorUsername,
+                approverUid: u.uid,
+                approverUsername: u.username,
+              },
+            },
           );
         }
 
@@ -666,7 +657,14 @@
           window.DiscordWebhooks.buildLogRejectedEmbed(
             { ...logData, reviewerUsername: u.username },
             note || null,
-          ));
+          ), {
+            mentions: {
+              requesterUid: logData.authorUid,
+              requesterUsername: logData.authorUsername,
+              approverUid: u.uid,
+              approverUsername: u.username,
+            },
+          });
       }
 
       await auditLog(`log.${decision}`, 'log', logId, { reviewer: u.username, note });

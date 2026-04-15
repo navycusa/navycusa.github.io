@@ -10,6 +10,8 @@
   'use strict';
 
   const DEFAULT_FOOTER_TEXT = 'US Navy CUSA Portal • created by pPayday';
+  const DISCORD_ID_RE = /^\d{15,25}$/;
+  const _discordIdCacheByUid = new Map();
 
   const WEBHOOK_KEYS = {
     general: 'webhookUrlGeneral',
@@ -105,6 +107,54 @@
     const d = typeof ts.toDate === 'function' ? ts.toDate() : new Date((ts.seconds || 0) * 1000);
     if (Number.isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  async function fetchDiscordIdForUid(firestoreDb, uid) {
+    const k = String(uid || '').trim();
+    if (!k) return null;
+    if (_discordIdCacheByUid.has(k)) return _discordIdCacheByUid.get(k);
+    try {
+      const snap = await firestoreDb.collection('users').doc(k).get();
+      if (!snap.exists) {
+        _discordIdCacheByUid.set(k, null);
+        return null;
+      }
+      const raw = String((snap.data() || {}).discordId || '').trim();
+      const cleaned = raw ? raw.replace(/[<@!>]/g, '').trim() : '';
+      const out = DISCORD_ID_RE.test(cleaned) ? cleaned : null;
+      _discordIdCacheByUid.set(k, out);
+      return out;
+    } catch (_) {
+      _discordIdCacheByUid.set(k, null);
+      return null;
+    }
+  }
+
+  function renderMention(discordId, fallbackLabel) {
+    if (discordId && DISCORD_ID_RE.test(discordId)) return `<@${discordId}>`;
+    const fb = String(fallbackLabel || '').trim();
+    return fb || '—';
+  }
+
+  async function buildRequesterApproverContent(firestoreDb, mentions) {
+    const m = mentions || {};
+    const requesterUid = m.requesterUid || null;
+    const approverUid = m.approverUid || null;
+
+    const [requesterDiscordId, approverDiscordId] = await Promise.all([
+      requesterUid ? fetchDiscordIdForUid(firestoreDb, requesterUid) : Promise.resolve(null),
+      approverUid ? fetchDiscordIdForUid(firestoreDb, approverUid) : Promise.resolve(null),
+    ]);
+
+    const requesterText = renderMention(requesterDiscordId, m.requesterUsername || m.requesterLabel);
+    const approverPending = m.approverPending === true || m.status === 'pending';
+    const approverText = approverPending
+      ? 'Pending approval'
+      : renderMention(approverDiscordId, m.approverUsername || m.approverLabel);
+
+    const content = `Requester: ${requesterText} | Approver: ${approverText}`;
+    const allowedUserIds = [requesterDiscordId, approverDiscordId].filter((x) => DISCORD_ID_RE.test(String(x || '')));
+    return { content, allowedUserIds: [...new Set(allowedUserIds)] };
   }
 
   function buildLogPendingEmbed(log) {
@@ -336,14 +386,26 @@
       const targets = webhookTargets(divData, category, status);
       if (!targets.length) return;
 
+      let content = opts && opts.content ? String(opts.content) : '';
+      let allowedMentionUserIds = [];
+      if (!content && opts && opts.mentions) {
+        const built = await buildRequesterApproverContent(firestoreDb, { status, ...(opts.mentions || {}) });
+        content = built.content || '';
+        allowedMentionUserIds = built.allowedUserIds || [];
+      }
+
       const payload = {
-        ...(opts && opts.content ? { content: String(opts.content) } : {}),
+        ...(content ? { content } : {}),
         embeds: [{
           ...embed,
           footer: embed.footer || defaultFooter(),
           timestamp: embed.timestamp || new Date().toISOString(),
         }],
       };
+
+      if (allowedMentionUserIds.length) {
+        payload.allowed_mentions = { parse: [], users: allowedMentionUserIds };
+      }
 
       for (const url of targets) {
         try {
