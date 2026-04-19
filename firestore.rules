@@ -210,7 +210,10 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if authed() && pl() >= 70;
+      // CNP+ may delete lower-ranked users (same bar as rank edits); mirrors Cloud Function intent.
+      allow delete: if authed() && request.auth.uid != uid
+        && int(resource.data.get('permission_level', 0)) < pl()
+        && pl() >= 60;
     }
 
     // ── /divisions/{divisionId} ──────────────────────────────

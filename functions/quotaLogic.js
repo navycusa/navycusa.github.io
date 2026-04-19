@@ -46,9 +46,15 @@ function scaleRequired(raw, reductionPercent) {
  * Pick active policy for division + rank in period.
  * @param {Array<object>} policies snapshot docs data + id
  */
-function selectPolicy(policies, divisionId, rankId, periodStart, periodEnd) {
+function normalizeQuotaScope(scope) {
+  return scope === 'external' ? 'external' : 'internal';
+}
+
+function selectPolicy(policies, divisionId, rankId, periodStart, periodEnd, quotaScope) {
+  const scope = normalizeQuotaScope(quotaScope);
   const candidates = policies.filter((p) => {
     if (p.divisionId !== divisionId || p.rankId !== rankId) return false;
+    if (normalizeQuotaScope(p.quotaScope) !== scope) return false;
     const from = parseYMD(p.effectiveFrom);
     if (!from || from > periodEnd) return false;
     if (!p.effectiveTo) return true;
@@ -194,6 +200,7 @@ function computeNetQuota(attendances, policy, mdqraPercent, loaExempt) {
 module.exports = {
   getPeriodBounds,
   parseYMD,
+  normalizeQuotaScope,
   selectPolicy,
   computeNetQuota,
   scaleRequired,

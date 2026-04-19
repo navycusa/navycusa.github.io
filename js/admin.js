@@ -254,28 +254,23 @@
       }
       document.getElementById('user-modal-save').onclick = () => saveUser(userId, usr);
 
-      // Permanent delete (Auth + Firestore) — requires Cloud Functions.
+      // Permanent removal: Firestore user doc only (Spark — no Cloud Functions / Auth Admin SDK).
       if (deletePermBtn) {
         deletePermBtn.classList.remove('hidden');
         deletePermBtn.onclick = async () => {
           try {
-            if (!confirm(`Remove account for ${usr.username}? This cannot be undone.`)) return;
+            if (!confirm(`Remove portal access for ${usr.username}? Their Firestore profile will be deleted. This cannot be undone.`)) return;
             const typed = prompt(`Type DELETE to remove account for ${usr.username}:`);
             if ((typed || '').trim().toUpperCase() !== 'DELETE') return;
-
-            if (!firebase.functions || typeof firebase.functions !== 'function') {
-              throw new Error('Removing an account requires deployed Cloud Functions (functions SDK not loaded).');
-            }
 
             deletePermBtn.disabled = true;
             deletePermBtn.innerHTML = '<span class="spinner"></span> Removing…';
 
-            const call = firebase.functions().httpsCallable('deleteUserPermanently');
-            await call({ uid: userId });
-            await auditLog('user.delete_permanent', 'user', userId, { username: usr.username });
+            await db.collection('users').doc(userId).delete();
+            await auditLog('user.delete_permanent', 'user', userId, { username: usr.username, sparkMode: true });
             closeUserModal();
             await loadUsers();
-            showAlert('users-alert', 'success', `User <strong>${escHtml(usr.username)}</strong> was permanently removed.`);
+            showAlert('users-alert', 'success', `User <strong>${escHtml(usr.username)}</strong> was removed from the portal. If needed, delete their Firebase Authentication user separately in the Firebase Console (Spark plan).`);
           } catch (e) {
             showAlert('user-modal-alert', 'danger', escHtml(e.message || String(e)));
           } finally {

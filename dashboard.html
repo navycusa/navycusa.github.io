@@ -286,6 +286,10 @@
                 <label for="quota-reason-mdqra">Reason</label>
                 <input type="text" id="quota-reason-mdqra" class="form-control" placeholder="Justification">
               </div>
+              <div class="form-group" style="min-width:200px;margin:0">
+                <label for="quota-proof-mdqra">Optional proof image</label>
+                <input type="file" id="quota-proof-mdqra" class="form-control" accept="image/*">
+              </div>
               <div class="form-group" style="margin:0;align-self:flex-end">
                 <button type="button" id="quota-submit-mdqra" class="btn btn-sm btn-secondary">Submit MDQRA</button>
               </div>
@@ -302,6 +306,10 @@
               <div class="form-group" style="min-width:160px;margin:0">
                 <label for="quota-reason-loa">Reason</label>
                 <input type="text" id="quota-reason-loa" class="form-control" placeholder="Justification">
+              </div>
+              <div class="form-group" style="min-width:200px;margin:0">
+                <label for="quota-proof-loa">Optional proof image</label>
+                <input type="file" id="quota-proof-loa" class="form-control" accept="image/*">
               </div>
               <div class="form-group" style="margin:0;align-self:flex-end">
                 <button type="button" id="quota-submit-loa" class="btn btn-sm btn-secondary">Submit LOA</button>
@@ -320,6 +328,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="/js/firebase-config.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="/js/supabase-config.js"></script>
 <script src="/js/ranks.js"></script>
 <script src="/js/auth.js"></script>
 <script src="/js/discord-webhooks.js"></script>

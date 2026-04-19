@@ -96,11 +96,11 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Division</th><th>Member</th><th>Type</th><th>Detail</th><th>Reason</th><th>Action</th>
+                    <th>Division</th><th>Member</th><th>Type</th><th>Detail</th><th>Reason</th><th>Proof</th><th>Action</th>
                   </tr>
                 </thead>
                 <tbody id="qc-global-req-body">
-                  <tr><td colspan="6" class="text-muted" style="padding:16px">Loading…</td></tr>
+                  <tr><td colspan="7" class="text-muted" style="padding:16px">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -110,6 +110,15 @@
         <div class="form-group mb-16" style="max-width:360px">
           <label for="qc-division">Division</label>
           <select id="qc-division" class="form-control"></select>
+        </div>
+
+        <div class="form-group mb-16" style="max-width:420px" id="qc-active-scope-wrap">
+          <label for="qc-active-scope">Enforced quota for members</label>
+          <select id="qc-active-scope" class="form-control">
+            <option value="internal">Internal policy set</option>
+            <option value="external">External policy set</option>
+          </select>
+          <p class="form-text" style="margin-top:6px;font-size:0.82rem">Publish separate policies for Internal and External below; members are measured against the set selected here.</p>
         </div>
 
         <div class="tab-bar">
@@ -128,11 +137,11 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Member</th><th>Type</th><th>Detail</th><th>Reason</th><th>Action</th>
+                    <th>Member</th><th>Type</th><th>Detail</th><th>Reason</th><th>Proof</th><th>Action</th>
                   </tr>
                 </thead>
                 <tbody id="qc-req-body">
-                  <tr><td colspan="5" class="text-muted" style="padding:16px">Load a division…</td></tr>
+                  <tr><td colspan="6" class="text-muted" style="padding:16px">Load a division…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -223,6 +232,13 @@
             <div class="card-header"><h3>Publish quota policy</h3></div>
             <div style="padding:16px">
               <div class="form-row">
+                <div class="form-group">
+                  <label for="qc-pol-quota-scope">This policy applies to</label>
+                  <select id="qc-pol-quota-scope" class="form-control">
+                    <option value="internal">Internal quota</option>
+                    <option value="external">External quota</option>
+                  </select>
+                </div>
                 <div class="form-group">
                   <label for="qc-pol-rank">Rank (main rank id)</label>
                   <select id="qc-pol-rank" class="form-control"></select>
@@ -333,7 +349,7 @@
             <div class="card-header"><h3>Policies for division</h3></div>
             <div class="table-wrapper">
               <table>
-                <thead><tr><th>Rank</th><th>Period</th><th>From</th><th>To</th><th>Rules #</th></tr></thead>
+                <thead><tr><th>Rank</th><th>Scope</th><th>Period</th><th>From</th><th>To</th><th>Rules #</th></tr></thead>
                 <tbody id="qc-pol-body"></tbody>
               </table>
             </div>

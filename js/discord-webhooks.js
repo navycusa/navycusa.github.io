@@ -218,6 +218,10 @@
 
   function buildLogRejectedEmbed(log, reviewNotes) {
     const isDuty = log.type === 'duty';
+    const detail = isDuty
+      ? `${log.durationMinutes || '—'} min duty`
+      : (log.eventType === 'Custom Event' ? log.customEventName : log.eventType);
+    const dateStr = formatLogDate(log.date);
     const embed = {
       title:  isDuty ? '❌ Duty Log Rejected' : '❌ Event Log Rejected',
       color:  0xe74c3c,
@@ -227,11 +231,20 @@
         { name: 'Approved by',  value: '—', inline: true },
         { name: 'Rejected by',  value: String(log.reviewerUsername || '—'), inline: true },
         { name: 'Division',     value: String(log.divisionName  || '—'), inline: true },
+        { name: 'Details', value: isDuty
+          ? `${log.durationMinutes || '—'} min duty on ${dateStr}`
+          : `${detail || '—'} on ${dateStr}`,
+        inline: false },
       ],
       footer:    defaultFooter(),
       timestamp: new Date().toISOString(),
     };
     if (reviewNotes) embed.fields.push({ name: 'Reason', value: String(reviewNotes).slice(0, 1024), inline: false });
+    if (log.discordLink) {
+      embed.fields.push({ name: 'Discord proof', value: `[View](${log.discordLink})`, inline: false });
+    }
+    const proofUrl = log.proofImageUrl || null;
+    if (proofUrl) embed.image = { url: proofUrl };
     return embed;
   }
 
@@ -251,7 +264,7 @@
       fields.push({ name: disp.detailLabel, value: `${req.loaStart || '—'} → ${req.loaEnd || '—'}`, inline: false });
     }
     if (req.reason) fields.push({ name: 'Reason', value: String(req.reason).slice(0, 1024), inline: false });
-    return {
+    const out = {
       title:       disp.pendingTitle,
       color:       0xf39c12,
       description: `A new **${disp.kindLabel}** was submitted and is **pending approval**.`,
@@ -259,6 +272,9 @@
       footer:      defaultFooter(),
       timestamp:   new Date().toISOString(),
     };
+    const proofUrl = req.proofImageUrl || null;
+    if (proofUrl) out.image = { url: proofUrl };
+    return out;
   }
 
   function buildQuotaRequestDecidedEmbed(req, divisionName, approved, decisionNotes, decider) {
@@ -277,7 +293,7 @@
     }
     if (!ok) fields.push({ name: 'Rejected by', value: String(decider || '—'), inline: true });
     if (decisionNotes) fields.push({ name: 'Notes', value: String(decisionNotes).slice(0, 1024), inline: false });
-    return {
+    const out = {
       title:       ok ? `✅ ${disp.kindLabel} approved` : `❌ ${disp.kindLabel} rejected`,
       color:       ok ? 0x2ecc71 : 0xe74c3c,
       description: ok ? 'The request was **approved** and applied.' : 'The request was **rejected**.',
@@ -285,6 +301,9 @@
       footer:      defaultFooter(),
       timestamp:   new Date().toISOString(),
     };
+    const proofUrl = req.proofImageUrl || null;
+    if (proofUrl) out.image = { url: proofUrl };
+    return out;
   }
 
   function buildQuotaReliefRevokedEmbed(relief, divisionName, actorUsername) {

@@ -229,8 +229,10 @@
         const bar = document.getElementById('quota-bar');
         const rulesEl = document.getElementById('quota-rules');
 
+        const scopeLabel = q.activeQuotaScope === 'external' ? 'External' : 'Internal';
+
         if (q.noPolicy) {
-          summary.innerHTML = '<span class="text-muted">No active quota policy is published for your rank in this division yet.</span>';
+          summary.innerHTML = `<span class="text-muted">No active <strong>${escHtml(scopeLabel)}</strong> quota policy is published for your rank in this division yet.</span>`;
           bar.style.width = '0%';
           rulesEl.innerHTML = '';
           badge.classList.add('hidden');
@@ -240,7 +242,7 @@
         if (q.exempt) {
           badge.textContent = 'LOA exempt';
           badge.classList.remove('hidden');
-          summary.innerHTML = `You are <strong>exempt</strong> from quota requirements for this period (${escHtml(q.periodStart)} – ${escHtml(q.periodEnd)}).`;
+          summary.innerHTML = `You are <strong>exempt</strong> from quota requirements for this period (${escHtml(q.periodStart)} – ${escHtml(q.periodEnd)}). <span class="text-muted">(${escHtml(scopeLabel)} quota)</span>`;
           bar.style.width = '100%';
           rulesEl.innerHTML = '';
           return;
@@ -255,7 +257,8 @@
           q.dutyMinutesLogged != null && Number(q.dutyMinutesLogged) > 0
             ? ` Approved duty time counted toward quota: <strong>${escHtml(String(q.dutyMinutesLogged))}</strong> min.`
             : '';
-        summary.innerHTML = `Period: <strong>${escHtml(q.periodStart)}</strong> → <strong>${escHtml(q.periodEnd)}</strong> (${escHtml(q.periodKind)}).
+        summary.innerHTML = `<span class="text-muted" style="font-size:0.85em">Quota mode: <strong>${escHtml(scopeLabel)}</strong>.</span><br>
+          Period: <strong>${escHtml(q.periodStart)}</strong> → <strong>${escHtml(q.periodEnd)}</strong> (${escHtml(q.periodKind)}).
           Average rule completion: <strong>${escHtml(String(q.completionPct))}%</strong>.
           Combined deficit (events + minutes): <strong>${escHtml(String(q.deficit))}</strong>.${dutyNote}
           <span class="text-muted" style="font-size:0.8em">Use the rule list for units (events vs minutes).</span>`;
@@ -310,14 +313,36 @@
       if (type === 'success') setTimeout(() => el.classList.add('hidden'), 5000);
     }
 
+    async function optionalQuotaProof(fileInputId) {
+      const inp = document.getElementById(fileInputId);
+      if (!inp || !inp.files || !inp.files[0]) return null;
+      if (typeof uploadProofImage !== 'function') {
+        throw new Error('Proof upload is not configured (Supabase).');
+      }
+      return uploadProofImage(inp.files[0], u.uid);
+    }
+
     document.getElementById('quota-submit-mdqra').addEventListener('click', async () => {
       const pct = parseInt(document.getElementById('quota-mdqra-pct').value, 10);
       const reason = document.getElementById('quota-reason-mdqra').value.trim();
+      const btn = document.getElementById('quota-submit-mdqra');
       try {
-        await QF.submitQuotaRequest(u, { requestType: 'MDQRA', reductionPercent: pct, reason });
+        btn.disabled = true;
+        let proofImageUrl = null;
+        try {
+          proofImageUrl = await optionalQuotaProof('quota-proof-mdqra');
+        } catch (pe) {
+          showReqMsg('danger', escHtml(pe.message || String(pe)));
+          return;
+        }
+        await QF.submitQuotaRequest(u, { requestType: 'MDQRA', reductionPercent: pct, reason, proofImageUrl });
         showReqMsg('success', 'MDQRA request submitted for division command approval.');
+        const fi = document.getElementById('quota-proof-mdqra');
+        if (fi) fi.value = '';
       } catch (e) {
         showReqMsg('danger', escHtml(e.message || String(e)));
+      } finally {
+        btn.disabled = false;
       }
     });
 
@@ -325,11 +350,24 @@
       const loaStart = document.getElementById('quota-loa-start').value;
       const loaEnd = document.getElementById('quota-loa-end').value;
       const reason = document.getElementById('quota-reason-loa').value.trim();
+      const btn = document.getElementById('quota-submit-loa');
       try {
-        await QF.submitQuotaRequest(u, { requestType: 'LOA', loaStart, loaEnd, reason });
+        btn.disabled = true;
+        let proofImageUrl = null;
+        try {
+          proofImageUrl = await optionalQuotaProof('quota-proof-loa');
+        } catch (pe) {
+          showReqMsg('danger', escHtml(pe.message || String(pe)));
+          return;
+        }
+        await QF.submitQuotaRequest(u, { requestType: 'LOA', loaStart, loaEnd, reason, proofImageUrl });
         showReqMsg('success', 'LOA request submitted for division command approval.');
+        const fi = document.getElementById('quota-proof-loa');
+        if (fi) fi.value = '';
       } catch (e) {
         showReqMsg('danger', escHtml(e.message || String(e)));
+      } finally {
+        btn.disabled = false;
       }
     });
 

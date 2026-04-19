@@ -478,6 +478,10 @@ async function computeQuotaStatusForUser(userSnap, referenceDate = new Date()) {
   }
 
   const policies = await loadPoliciesForDivision(divisionId);
+  const divSnap = await db.collection('divisions').doc(divisionId).get();
+  const activeQuotaScope = quotaLogic.normalizeQuotaScope(
+    divSnap.exists ? divSnap.data().activeQuotaScope : 'internal',
+  );
   const rankId = effectiveQuotaRankId(user);
   const roughStart = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), 1));
   const roughEnd = new Date(Date.UTC(
@@ -486,13 +490,14 @@ async function computeQuotaStatusForUser(userSnap, referenceDate = new Date()) {
     0, 23, 59, 59, 999,
   ));
 
-  const policy = quotaLogic.selectPolicy(policies, divisionId, rankId, roughStart, roughEnd);
+  const policy = quotaLogic.selectPolicy(policies, divisionId, rankId, roughStart, roughEnd, activeQuotaScope);
   if (!policy) {
     return {
       ok: true,
       noPolicy: true,
       divisionId,
       rankId,
+      activeQuotaScope,
       periodStart: roughStart.toISOString().slice(0, 10),
       periodEnd: roughEnd.toISOString().slice(0, 10),
     };
@@ -515,6 +520,7 @@ async function computeQuotaStatusForUser(userSnap, referenceDate = new Date()) {
     noPolicy: false,
     divisionId,
     rankId,
+    activeQuotaScope,
     policyId: policy.id,
     periodKind: pk,
     periodStart: bounds.start.toISOString().slice(0, 10),

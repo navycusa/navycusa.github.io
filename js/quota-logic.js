@@ -36,9 +36,16 @@
     return Math.max(0, Math.round(adj * 1000) / 1000);
   }
 
-  function selectPolicy(policies, divisionId, rankId, periodStart, periodEnd) {
+  function normalizeQuotaScope(scope) {
+    return scope === 'external' ? 'external' : 'internal';
+  }
+
+  function selectPolicy(policies, divisionId, rankId, periodStart, periodEnd, quotaScope) {
+    const scope = normalizeQuotaScope(quotaScope);
     const candidates = policies.filter((p) => {
       if (p.divisionId !== divisionId || p.rankId !== rankId) return false;
+      const pScope = normalizeQuotaScope(p.quotaScope);
+      if (pScope !== scope) return false;
       const from = parseYMD(p.effectiveFrom);
       if (!from || from > periodEnd) return false;
       if (!p.effectiveTo) return true;
@@ -178,6 +185,7 @@
   global.QuotaLogic = {
     getPeriodBounds,
     parseYMD,
+    normalizeQuotaScope,
     selectPolicy,
     computeNetQuota,
     scaleRequired,

@@ -74,6 +74,36 @@
   currentIsHQ = manageable[0].isHeadquarters === true || manageable[0].id === HQ_DIVISION_ID;
   divSel.value = currentDivisionId;
 
+  const activeScopeSel = document.getElementById('qc-active-scope');
+  const polScopeSel = document.getElementById('qc-pol-quota-scope');
+
+  function syncDivisionScopeSelect() {
+    if (!activeScopeSel) return;
+    const div = divisions.find((x) => x.id === currentDivisionId);
+    const QLogic = window.QuotaLogic;
+    const scope = QLogic ? QLogic.normalizeQuotaScope(div && div.activeQuotaScope) : 'internal';
+    activeScopeSel.value = scope;
+    const can = typeof canEditDivisionDocument === 'function' && div
+      && canEditDivisionDocument(u, currentDivisionId, div);
+    activeScopeSel.disabled = !can;
+  }
+
+  if (activeScopeSel) {
+    activeScopeSel.addEventListener('change', async () => {
+      if (activeScopeSel.disabled) return;
+      clearAlert('qc-req-alert');
+      try {
+        await QF.setDivisionActiveQuotaScope(u.uid, currentDivisionId, activeScopeSel.value);
+        const div = divisions.find((x) => x.id === currentDivisionId);
+        if (div) div.activeQuotaScope = window.QuotaLogic.normalizeQuotaScope(activeScopeSel.value);
+        showAlert('qc-req-alert', 'success', 'Active quota mode saved for this division.');
+      } catch (e) {
+        showAlert('qc-req-alert', 'danger', escHtml(e.message || String(e)));
+        syncDivisionScopeSelect();
+      }
+    });
+  }
+
   const typeSel = document.getElementById('qc-def-type');
 
   const rankSel = document.getElementById('qc-pol-rank');
@@ -288,6 +318,7 @@
     const div = divisions.find((x) => x.id === currentDivisionId);
     currentIsHQ = div && (div.isHeadquarters === true || div.id === HQ_DIVISION_ID);
     refreshDivisionEventTypeOptions();
+    syncDivisionScopeSelect();
     await refreshAll();
   });
 
@@ -333,7 +364,7 @@
   function renderGlobalRequests(rows) {
     const tbody = document.getElementById('qc-global-req-body');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">No pending requests in divisions you may view.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="text-muted" style="padding:16px">No pending requests in divisions you may view.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map((r) => {
@@ -342,6 +373,9 @@
       const detail = r.requestType === 'MDQRA'
         ? `${r.reductionPercent}% reduction`
         : `LOA ${escHtml(r.loaStart || '')} → ${escHtml(r.loaEnd || '')}`;
+      const proofCell = r.proofImageUrl
+        ? `<a href="${escHtml(r.proofImageUrl)}" target="_blank" rel="noopener">Image</a>`
+        : '—';
       const actions = canAct
         ? `<button type="button" class="btn btn-sm btn-success qc-gappr" data-id="${escHtml(r.id)}">Approve</button>
            <button type="button" class="btn btn-sm btn-danger qc-grej" data-id="${escHtml(r.id)}">Reject</button>`
@@ -352,6 +386,7 @@
         <td>${escHtml(r.requestType)}</td>
         <td>${detail}</td>
         <td>${escHtml(r.reason || '—')}</td>
+        <td>${proofCell}</td>
         <td>${actions}</td>
       </tr>`;
     }).join('');
@@ -375,6 +410,7 @@
       console.error(e);
       showAlert('qc-req-alert', 'danger', escHtml(e.message || String(e)));
     }
+    syncDivisionScopeSelect();
     await refreshRelief();
     await refreshReform();
     await refreshGlobalPending();
@@ -653,18 +689,22 @@
   function renderRequests(rows) {
     const tbody = document.getElementById('qc-req-body');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="padding:16px">No pending requests.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:16px">No pending requests.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map((r) => {
       const detail = r.requestType === 'MDQRA'
         ? `${r.reductionPercent}% reduction`
         : `LOA ${escHtml(r.loaStart || '')} → ${escHtml(r.loaEnd || '')}`;
+      const proofCell = r.proofImageUrl
+        ? `<a href="${escHtml(r.proofImageUrl)}" target="_blank" rel="noopener">Image</a>`
+        : '—';
       return `<tr>
         <td>${escHtml(r.requesterUsername || '—')}</td>
         <td>${escHtml(r.requestType)}</td>
         <td>${detail}</td>
         <td>${escHtml(r.reason || '—')}</td>
+        <td>${proofCell}</td>
         <td>
           <button type="button" class="btn btn-sm btn-success qc-appr" data-id="${escHtml(r.id)}">Approve</button>
           <button type="button" class="btn btn-sm btn-danger qc-rej" data-id="${escHtml(r.id)}">Reject</button>
@@ -761,13 +801,15 @@
   function renderPolicies(rows) {
     const tbody = document.getElementById('qc-pol-body');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="padding:12px">No policies.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="padding:12px">No policies.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map((p) => {
       const n = (p.rules && p.rules.length) || 0;
+      const scope = p.quotaScope === 'external' ? 'External' : 'Internal';
       return `<tr>
         <td>${escHtml(p.rankId)}</td>
+        <td>${escHtml(scope)}</td>
         <td>${escHtml(p.periodKind)}</td>
         <td>${escHtml(p.effectiveFrom || '—')}</td>
         <td>${escHtml(p.effectiveTo || '—')}</td>
@@ -802,6 +844,7 @@
         effectiveFrom,
         effectiveTo,
         rules,
+        quotaScope: polScopeSel ? polScopeSel.value : 'internal',
       });
       showAlert('qc-pol-alert', 'success', 'Policy saved.');
       await refreshAll();

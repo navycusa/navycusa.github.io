@@ -104,6 +104,9 @@
       return { ok: true, noPolicy: true, message: 'No quota division assigned.' };
     }
 
+    const divSnap = await db.collection('divisions').doc(divisionId).get();
+    const activeQuotaScope = Quota.normalizeQuotaScope(divSnap.exists ? divSnap.data().activeQuotaScope : 'internal');
+
     const policiesSnap = await db.collection('quota_policies').where('divisionId', '==', divisionId).get();
     const policies = policiesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const rankId = user.mappedRankId || user.rankId || '';
@@ -115,13 +118,14 @@
       0, 23, 59, 59, 999,
     ));
 
-    const policy = Quota.selectPolicy(policies, divisionId, rankId, roughStart, roughEnd);
+    const policy = Quota.selectPolicy(policies, divisionId, rankId, roughStart, roughEnd, activeQuotaScope);
     if (!policy) {
       return {
         ok: true,
         noPolicy: true,
         divisionId,
         rankId,
+        activeQuotaScope,
         periodStart: roughStart.toISOString().slice(0, 10),
         periodEnd: roughEnd.toISOString().slice(0, 10),
       };
@@ -146,6 +150,7 @@
       noPolicy: false,
       divisionId,
       rankId,
+      activeQuotaScope,
       policyId: policy.id,
       periodKind: pk,
       periodStart: bounds.start.toISOString().slice(0, 10),
@@ -346,6 +351,9 @@
     if (!divisionId || divisionId === 'ndvl') {
       throw new Error('You must belong to a quota division.');
     }
+    const proofImageUrl = payload.proofImageUrl && String(payload.proofImageUrl).trim()
+      ? String(payload.proofImageUrl).trim()
+      : null;
     if (payload.requestType === 'MDQRA') {
       const p = Number(payload.reductionPercent);
       if (!(p > 0 && p <= 100)) throw new Error('MDQRA requires reduction percent 1–100.');
@@ -357,6 +365,7 @@
         status: 'pending',
         reductionPercent: p,
         reason: payload.reason || null,
+        proofImageUrl,
         createdAt: fv().serverTimestamp(),
       });
       await notifyQuotaDiscordSubmit(divisionId, {
@@ -366,6 +375,7 @@
         divisionId,
         reductionPercent: p,
         reason: payload.reason || null,
+        proofImageUrl,
       });
       return;
     }
@@ -380,6 +390,7 @@
         loaStart: payload.loaStart,
         loaEnd: payload.loaEnd,
         reason: payload.reason || null,
+        proofImageUrl,
         createdAt: fv().serverTimestamp(),
       });
       await notifyQuotaDiscordSubmit(divisionId, {
@@ -390,6 +401,7 @@
         loaStart: payload.loaStart,
         loaEnd: payload.loaEnd,
         reason: payload.reason || null,
+        proofImageUrl,
       });
       return;
     }
@@ -527,10 +539,22 @@
     await notifyQuotaDiscordRelief('deleted', { ...m, kind: 'modifier' }, m.divisionId, caller);
   }
 
+  async function setDivisionActiveQuotaScope(callerUid, divisionId, scope) {
+    const Quota = Q();
+    const s = Quota.normalizeQuotaScope(scope);
+    await db.collection('divisions').doc(divisionId).update({
+      activeQuotaScope: s,
+      activeQuotaScopeUpdatedAt: fv().serverTimestamp(),
+      activeQuotaScopeUpdatedByUid: callerUid,
+    });
+  }
+
   async function saveQuotaPolicy(callerUid, divisionId, data) {
     const {
-      policyId, rankId, periodKind, effectiveFrom, effectiveTo, rules,
+      policyId, rankId, periodKind, effectiveFrom, effectiveTo, rules, quotaScope,
     } = data;
+    const Quota = Q();
+    const scope = Quota.normalizeQuotaScope(quotaScope);
     const payload = {
       divisionId,
       rankId,
@@ -538,6 +562,7 @@
       effectiveFrom,
       effectiveTo: effectiveTo || null,
       rules: Array.isArray(rules) ? rules : [],
+      quotaScope: scope,
       updatedAt: fv().serverTimestamp(),
       updatedByUid: callerUid,
     };
@@ -711,6 +736,7 @@
     deleteQuotaRequest,
     revokeQuotaModifier,
     deleteQuotaModifier,
+    setDivisionActiveQuotaScope,
     saveQuotaPolicy,
     saveEventDefinition,
     deleteEventDefinition,
